@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String
+  password    String
+  role        Role         @default(OPERATOR)
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  auditLogs   AuditLog[]
+  validations Validation[]
+
+  @@index([email])
+}
+
+model Order {
+  id                String        @id @default(cuid())
+  orderNumber       String        @unique
+  buyerName         String
+  buyerEmail        String
+  buyerPhone        String
+  buyerDNI          String
+  unitPrice         Decimal       @db.Decimal(10, 2)
+  quantity          Int
+  totalAmount       Decimal       @db.Decimal(10, 2)
+  paymentStatus     PaymentStatus @default(PENDING)
+  mercadoPagoId     String?       @unique
+  mercadoPagoStatus String?
+  status            OrderStatus   @default(ACTIVE)
+  purchaseDate      DateTime      @default(now())
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  tickets           Ticket[]
+
+  @@index([buyerEmail])
+  @@index([buyerDNI])
+  @@index([orderNumber])
+  @@index([mercadoPagoId])
+  @@index([paymentStatus])
+}
+
+model Ticket {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  qrHash      String       @unique
+  status      TicketStatus @default(PAID)
+  validated   Boolean      @default(false)
+  validatedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  orderId     String
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  validations Validation[]
+
+  @@index([orderId])
+  @@index([qrHash])
+  @@index([code])
+  @@index([validated])
+  @@index([status])
+}
+
+model SystemConfig {
+  id             String   @id @default(cuid())
+  
+  // Configuración de entradas
+  ticketPrice    Decimal  @db.Decimal(10, 2)
+  totalAvailable Int
+  maxPerPurchase Int      @default(10)
+  salesEnabled   Boolean  @default(true)
+  
+  // Información del evento
+  eventDate      DateTime
+  eventName      String
+  eventLocation  String?
+  
+  // Email (mantener en DB porque no son sensibles)
+  emailFrom      String?
+  emailEnabled   Boolean  @default(true)
+  
+  // ❌ REMOVIDO: mpAccessToken y mpPublicKey
+  // Ahora están en .env como:
+  // MERCADOPAGO_ACCESS_TOKEN
+  // MERCADOPAGO_PUBLIC_KEY
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("system_config")
+}
+
+model Validation {
+  id        String   @id @default(cuid())
+  ticketId  String
+  userId    String
+  timestamp DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  userName  String
+  userEmail String
+  action    String
+  entity    String
+  entityId  String?
+  oldValue  String?
+  newValue  String?
+  ipAddress String?
+  userAgent String?
+  timestamp DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([timestamp])
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum OrderStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum TicketStatus {
+  PENDING_PAYMENT
+  PAID
+  VALIDATED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}

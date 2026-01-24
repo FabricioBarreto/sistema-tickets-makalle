@@ -1,0 +1,385 @@
+// app/checkout/page.tsx
+"use client";
+
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import {
+  formatCurrency,
+  isValidEmail,
+  isValidPhone,
+  isValidDNI,
+} from "@/lib/utils";
+import { toast } from "sonner";
+
+function CheckoutContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const quantity = parseInt(searchParams.get("quantity") || "1");
+
+  const [loading, setLoading] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [ticketPrice, setTicketPrice] = useState(0);
+  const [formData, setFormData] = useState({
+    buyerName: "",
+    buyerEmail: "",
+    buyerPhone: "",
+    buyerDNI: "",
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const totalAmount = ticketPrice * quantity;
+
+  // ✅ Cargar configuración real al montar
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  const loadConfig = async () => {
+    try {
+      const res = await fetch("/api/config", { cache: "no-store" });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+
+      console.log("🔍 Response config:", data); // DEBUG
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "No se pudo cargar la configuración");
+      }
+
+      const price = Number(data.data.ticketPrice || 0);
+      console.log("💰 Precio cargado:", price); // DEBUG
+      setTicketPrice(price);
+    } catch (error: any) {
+      console.error("❌ Error cargando config:", error);
+      toast.error("Error cargando precios");
+      setTicketPrice(0);
+    } finally {
+      setLoadingConfig(false);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.buyerName || formData.buyerName.trim().length < 3) {
+      newErrors.buyerName = "El nombre debe tener al menos 3 caracteres";
+    }
+
+    if (!isValidEmail(formData.buyerEmail)) {
+      newErrors.buyerEmail = "Email inválido";
+    }
+
+    if (!isValidPhone(formData.buyerPhone)) {
+      newErrors.buyerPhone = "Teléfono inválido (ej: +54 9 362 123-4567)";
+    }
+
+    if (!isValidDNI(formData.buyerDNI)) {
+      newErrors.buyerDNI = "DNI inválido (7 u 8 dígitos)";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!validateForm()) {
+      toast.error("Por favor completá todos los campos correctamente");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // 1) Crear la orden + tickets
+      const createRes = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          quantity,
+        }),
+      });
+
+      const createText = await createRes.text();
+      if (!createRes.ok) {
+        throw new Error(
+          `Error creando orden (${createRes.status}): ${createText}`,
+        );
+      }
+
+      const createData = createText ? JSON.parse(createText) : null;
+
+      if (!createData?.success) {
+        throw new Error(createData?.error || "Error al crear la orden");
+      }
+
+      const { id: orderId } = createData.data;
+
+      // 2) Crear preferencia de Mercado Pago
+      const mpRes = await fetch("/api/mercadopago/preference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+
+      const mpText = await mpRes.text();
+      if (!mpRes.ok) {
+        throw new Error(`Error MP (${mpRes.status}): ${mpText}`);
+      }
+
+      const mpData = mpText ? JSON.parse(mpText) : null;
+
+      if (!mpData?.success) {
+        throw new Error(
+          mpData?.error || mpText || "Error al crear preferencia",
+        );
+      }
+
+      // 3) Redirigir a Mercado Pago
+      window.location.href = mpData.data.initPoint;
+    } catch (error: any) {
+      console.error("Error:", error);
+      toast.error(error.message || "Error al procesar la compra");
+      setLoading(false);
+    }
+  };
+
+  // ✅ Mostrar loader mientras carga config
+  if (loadingConfig) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
+          <p className="text-gray-600">Cargando información...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <button
+            onClick={() => router.back()}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            Volver
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Form Column */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl shadow-sm p-6 md:p-8">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                Completá tus datos
+              </h1>
+              <p className="text-gray-600 mb-8">
+                Necesitamos esta información para enviarte las entradas
+              </p>
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Nombre */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Nombre completo *
+                  </label>
+                  <input
+                    type="text"
+                    name="buyerName"
+                    value={formData.buyerName}
+                    onChange={handleChange}
+                    placeholder="Juan Pérez"
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                      errors.buyerName ? "border-red-500" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.buyerName && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.buyerName}
+                    </p>
+                  )}
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    name="buyerEmail"
+                    value={formData.buyerEmail}
+                    onChange={handleChange}
+                    placeholder="juan@ejemplo.com"
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                      errors.buyerEmail ? "border-red-500" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.buyerEmail && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.buyerEmail}
+                    </p>
+                  )}
+                  <p className="mt-1 text-sm text-gray-500">
+                    Recibirás las entradas en este email
+                  </p>
+                </div>
+
+                {/* Teléfono */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Teléfono *
+                  </label>
+                  <input
+                    type="tel"
+                    name="buyerPhone"
+                    value={formData.buyerPhone}
+                    onChange={handleChange}
+                    placeholder="+54 9 362 123-4567"
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                      errors.buyerPhone ? "border-red-500" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.buyerPhone && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.buyerPhone}
+                    </p>
+                  )}
+                </div>
+
+                {/* DNI */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    DNI *
+                  </label>
+                  <input
+                    type="text"
+                    name="buyerDNI"
+                    value={formData.buyerDNI}
+                    onChange={handleChange}
+                    placeholder="12345678"
+                    maxLength={8}
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                      errors.buyerDNI ? "border-red-500" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.buyerDNI && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.buyerDNI}
+                    </p>
+                  )}
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Procesando...
+                    </>
+                  ) : (
+                    <>
+                      Continuar al pago
+                      <ShieldCheck className="w-5 h-5" />
+                    </>
+                  )}
+                </button>
+
+                <p className="text-sm text-gray-500 text-center">
+                  Al continuar, serás redirigido a Mercado Pago para completar
+                  el pago de forma segura
+                </p>
+              </form>
+            </div>
+          </div>
+
+          {/* Summary Column */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-sm p-6 sticky top-24">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Resumen</h2>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between py-3 border-b">
+                  <span className="text-gray-600">Cantidad</span>
+                  <span className="font-semibold text-gray-900">
+                    {quantity} entrada{quantity !== 1 ? "s" : ""}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-3 border-b">
+                  <span className="text-gray-600">Precio unitario</span>
+                  <span className="font-semibold text-gray-900">
+                    {formatCurrency(ticketPrice)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg px-4">
+                  <span className="font-bold text-gray-900">Total</span>
+                  <span className="text-2xl font-bold text-purple-600">
+                    {formatCurrency(totalAmount)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5" />
+                  Pago 100% seguro
+                </h3>
+                <p className="text-sm text-blue-800">
+                  Tu pago es procesado de forma segura por Mercado Pago.
+                  Aceptamos todas las tarjetas de crédito y débito.
+                </p>
+              </div>
+
+              <div className="mt-4 p-4 bg-green-50 rounded-lg">
+                <h3 className="font-semibold text-green-900 mb-2">
+                  📧 Entrega instantánea
+                </h3>
+                <p className="text-sm text-green-800">
+                  Recibirás tus entradas con código QR al instante por email
+                  después de confirmar el pago.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+        </div>
+      }
+    >
+      <CheckoutContent />
+    </Suspense>
+  );
+}
