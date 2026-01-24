@@ -11,7 +11,7 @@ function parseDateRange(from?: string | null, to?: string | null) {
   return { fromDate, toDate };
 }
 
-function csvEscape(v: any) {
+function csvEscape(v: unknown) {
   if (v === null || v === undefined) return "";
   const s = String(v);
   if (
@@ -25,7 +25,7 @@ function csvEscape(v: any) {
   return s;
 }
 
-function toCSV(rows: Record<string, any>[]) {
+function toCSV(rows: Record<string, unknown>[]) {
   if (rows.length === 0) return "";
   const headers = Object.keys(rows[0]);
   const lines = [
@@ -54,11 +54,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Filtros de fecha (según entidad)
-    const dateFilter: any = {};
+    const dateFilter: Record<string, Date> = {};
     if (fromDate) dateFilter.gte = fromDate;
     if (toDate) dateFilter.lte = toDate;
 
-    let rows: Record<string, any>[] = [];
+    let rows: Record<string, unknown>[] = [];
     let filenameBase = "";
 
     if (type === "sales") {

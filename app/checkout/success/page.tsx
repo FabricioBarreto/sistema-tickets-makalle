@@ -11,11 +11,20 @@ import {
   Clock,
 } from "lucide-react";
 
+interface Order {
+  orderNumber: string;
+  quantity: number;
+  buyerName: string;
+  buyerEmail: string;
+  totalAmount: number;
+  paymentStatus: string;
+}
+
 function SuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const orderId = searchParams.get("orderId");
-  const [order, setOrder] = useState<any>(null);
+  const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [paymentStatus, setPaymentStatus] = useState<string>("PENDING");
 

@@ -8,7 +8,7 @@ export async function requireRole(
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/admin/login");
 
-  const role = session.user.role;
+  const role = session.user.role as "ADMIN" | "OPERATOR" | "VIEWER";
 
   if (!allowed.includes(role)) {
     if (role === "OPERATOR") redirect("/admin/validate");

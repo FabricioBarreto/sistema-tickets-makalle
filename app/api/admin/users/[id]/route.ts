@@ -19,7 +19,13 @@ export async function PATCH(
   const session = await getServerSession(authOptions);
   if (!session?.user)
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const me = session.user as any;
+  interface SessionUser {
+    id: string;
+    name?: string;
+    email?: string;
+    role: "ADMIN" | "OPERATOR" | "VIEWER";
+  }
+  const me = session.user as SessionUser;
   if (me.role !== "ADMIN")
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -29,7 +35,12 @@ export async function PATCH(
   if (!parsed.success)
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
 
-  const data: any = {};
+  const data: {
+    name?: string;
+    role?: "ADMIN" | "OPERATOR" | "VIEWER";
+    active?: boolean;
+    password?: string;
+  } = {};
   if (parsed.data.name !== undefined) data.name = parsed.data.name;
   if (parsed.data.role !== undefined) data.role = parsed.data.role;
   if (parsed.data.active !== undefined) data.active = parsed.data.active;
@@ -59,7 +70,13 @@ export async function DELETE(
   const session = await getServerSession(authOptions);
   if (!session?.user)
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const me = session.user as any;
+  interface SessionUser {
+    id: string;
+    name?: string;
+    email?: string;
+    role: "ADMIN" | "OPERATOR" | "VIEWER";
+  }
+  const me = session.user as SessionUser;
   if (me.role !== "ADMIN")
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 

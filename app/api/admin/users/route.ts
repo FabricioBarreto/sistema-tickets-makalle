@@ -16,7 +16,13 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user)
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const user = session.user as any;
+  interface SessionUser {
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+    role?: string;
+  }
+  const user = session.user as SessionUser;
   if (user.role !== "ADMIN")
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -39,7 +45,13 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user)
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const me = session.user as any;
+  interface SessionUser {
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+    role?: string;
+  }
+  const me = session.user as SessionUser;
   if (me.role !== "ADMIN")
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -73,7 +85,7 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, data: created });
-  } catch (e: any) {
+  } catch (e: unknown) {
     // email unique
     return NextResponse.json(
       { error: "No se pudo crear (¿email ya existe?)" },

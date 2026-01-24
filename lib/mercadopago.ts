@@ -64,15 +64,17 @@ export async function createPaymentPreference(args: CreatePreferenceArgs) {
       initPoint: result.init_point,
       sandboxInitPoint: result.sandbox_init_point,
     };
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    const errorObject = e instanceof Error ? (e as unknown as Record<string, unknown>) : {};
     return {
       success: false,
-      error: e?.message || "Error Mercado Pago",
+      error: error.message || "Error Mercado Pago",
       details: {
-        message: e?.message,
-        error: e?.error,
-        status: e?.status,
-        cause: e?.cause,
+        message: error.message,
+        error: 'error' in errorObject ? errorObject.error : undefined,
+        status: 'status' in errorObject ? errorObject.status : undefined,
+        cause: e instanceof Error ? error.cause : undefined,
       },
     };
   }
@@ -114,11 +116,12 @@ export async function getPaymentStatus(paymentId: string | number) {
         },
       },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
     console.error("Error getting payment status:", error);
     return {
       success: false,
-      error: error?.message || "Error al obtener información del pago",
+      error: err.message || "Error al obtener información del pago",
     };
   }
 }

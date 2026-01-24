@@ -93,13 +93,32 @@ export async function POST(request: NextRequest) {
         // Obtener configuración del evento
         const config = await prisma.systemConfig.findFirst();
 
-        const emailResult = await sendTicketEmailWithQRs({
+        interface TicketEmailData {
+          id: string;
+          qrCode: string;
+          order: {
+            orderNumber: string;
+            buyerName: string;
+          };
+        }
+
+        interface SendEmailParams {
+          to: string;
+          orderNumber: string;
+          buyerName: string;
+          tickets: TicketEmailData[];
+          eventName: string;
+          eventDate: string;
+          eventLocation: string;
+        }
+
+        const emailParams: SendEmailParams = {
           to: order.buyerEmail,
           orderNumber: order.orderNumber,
           buyerName: order.buyerName,
           tickets: order.tickets.map((ticket) => ({
             id: ticket.id,
-            qrCode: ticket.qrHash, // ✅ Usar qrHash del schema
+            qrCode: ticket.qrHash,
             order: {
               orderNumber: order.orderNumber,
               buyerName: order.buyerName,
@@ -113,7 +132,9 @@ export async function POST(request: NextRequest) {
               year: "numeric",
             }) || "Febrero 2026",
           eventLocation: config?.eventLocation || "Makallé, Chaco",
-        });
+        };
+
+        const emailResult = await sendTicketEmailWithQRs(emailParams);
 
         if (emailResult.success) {
           console.log(`✅ Email sent successfully to ${order.buyerEmail}`);
@@ -132,10 +153,11 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ received: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("❌ Webhook error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     // Retornar 200 para que MP no reintente
-    return NextResponse.json({ received: true, error: error.message });
+    return NextResponse.json({ received: true, error: errorMessage });
   }
 }
 

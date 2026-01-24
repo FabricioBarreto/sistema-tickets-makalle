@@ -26,10 +26,14 @@ export async function GET() {
         eventLocation: cfg.eventLocation ?? "",
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error /api/config:", error);
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Error interno";
     return NextResponse.json(
-      { success: false, error: error?.message || "Error interno" },
+      { success: false, error: errorMessage },
       { status: 500 },
     );
   }

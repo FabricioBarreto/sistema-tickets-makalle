@@ -101,15 +101,19 @@ export default function SettingsPage() {
         emailFrom: c.emailFrom ?? "",
         emailEnabled: Boolean(c.emailEnabled ?? true),
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      toast.error(e.message || "Error cargando configuración");
+      if (e instanceof Error) {
+        toast.error(e.message || "Error cargando configuración");
+      } else {
+        toast.error("Error cargando configuración");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const putConfig = async (payload: Record<string, any>) => {
+  const putConfig = async (payload: Record<string, unknown>) => {
     setSaving(true);
     try {
       const res = await fetch("/api/admin/settings", {
@@ -127,9 +131,13 @@ export default function SettingsPage() {
 
       toast.success("Guardado ✅");
       await loadConfig();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      toast.error(e.message || "Error guardando");
+      if (e instanceof Error) {
+        toast.error(e.message || "Error guardando");
+      } else {
+        toast.error("Error guardando");
+      }
     } finally {
       setSaving(false);
     }

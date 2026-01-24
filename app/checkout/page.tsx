@@ -50,7 +50,7 @@ function CheckoutContent() {
       const price = Number(data.data.ticketPrice || 0);
       console.log("💰 Precio cargado:", price); // DEBUG
       setTicketPrice(price);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("❌ Error cargando config:", error);
       toast.error("Error cargando precios");
       setTicketPrice(0);
@@ -148,9 +148,13 @@ function CheckoutContent() {
 
       // 3) Redirigir a Mercado Pago
       window.location.href = mpData.data.initPoint;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error:", error);
-      toast.error(error.message || "Error al procesar la compra");
+      if (error instanceof Error) {
+        toast.error(error.message || "Error al procesar la compra");
+      } else {
+        toast.error("Error al procesar la compra");
+      }
       setLoading(false);
     }
   };

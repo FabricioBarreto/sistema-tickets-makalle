@@ -248,11 +248,12 @@ export async function sendTicketEmailWithQRs(
       success: true,
       messageId: result.data?.id,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Failed to send email";
     console.error("❌ Error sending email:", error);
     return {
       success: false,
-      error: error.message || "Failed to send email",
+      error: errorMessage,
     };
   }
 }

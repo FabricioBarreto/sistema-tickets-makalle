@@ -1,18 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
-  req: NextRequest,
-  { params }: { params: { orderId: string } },
+  _req: Request,
+  ctx: RouteContext<"/api/orders/[orderId]">,
 ) {
   try {
-    const { orderId } = params;
+    const { orderId } = await ctx.params;
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: {
-        tickets: true,
-      },
+      include: { tickets: true },
     });
 
     if (!order) {
@@ -30,7 +28,7 @@ export async function GET(
         totalAmount: Number(order.totalAmount),
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error fetching order:", error);
     return NextResponse.json(
       { success: false, error: "Error al obtener la orden" },

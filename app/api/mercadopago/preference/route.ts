@@ -62,7 +62,42 @@ export async function POST(req: NextRequest) {
       pending: `${appUrl}/checkout/pending?orderId=${order.id}`,
     };
 
-    const preferenceData: any = {
+    interface PreferenceItem {
+      title: string;
+      description: string;
+      quantity: number;
+      unit_price: number;
+      currency_id: string;
+    }
+
+    interface PreferencePayer {
+      name: string;
+      email: string;
+      phone: {
+        area_code: string;
+        number: string;
+      };
+      identification: {
+        type: string;
+        number: string;
+      };
+    }
+
+    interface PreferenceData {
+      items: PreferenceItem[];
+      payer: PreferencePayer;
+      back_urls: {
+        success: string;
+        failure: string;
+        pending: string;
+      };
+      external_reference: string;
+      statement_descriptor: string;
+      auto_return?: string;
+      notification_url?: string;
+    }
+
+    const preferenceData: PreferenceData = {
       items: [
         {
           title: `${config?.eventName || "Entrada"} - Entrada General`,
@@ -142,10 +177,11 @@ export async function POST(req: NextRequest) {
         sandboxInitPoint: mpData.sandbox_init_point,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("❌ Error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: errorMessage },
       { status: 500 },
     );
   }

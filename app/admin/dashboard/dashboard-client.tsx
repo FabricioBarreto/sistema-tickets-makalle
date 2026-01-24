@@ -266,7 +266,7 @@ export default function DashboardPage() {
                   border: "1px solid #e5e7eb",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => formatCurrency(value)}
+                formatter={(value: number | undefined) => formatCurrency(value ?? 0)}
               />
               <Legend />
               <Line

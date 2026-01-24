@@ -3,6 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+interface AdminUser {
+  id?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+}
+
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   if (!session?.user)
@@ -10,7 +17,7 @@ async function requireAdmin() {
       ok: false as const,
       res: NextResponse.json({ error: "No autorizado" }, { status: 401 }),
     };
-  const me = session.user as any;
+  const me = session.user as AdminUser;
   if (me.role !== "ADMIN")
     return {
       ok: false as const,
@@ -36,8 +43,6 @@ export async function GET() {
         eventName: "Carnaval Makalle 2026",
         eventLocation: "Anfiteatro Municipal",
         eventDate: new Date("2026-02-14T20:00:00"),
-        mpPublicKey: "",
-        mpAccessToken: "",
         emailFrom: "noreply@carnaval.com",
         emailEnabled: true,
       },
@@ -75,8 +80,6 @@ export async function PUT(req: NextRequest) {
           eventName: "Carnaval Makalle 2026",
           eventLocation: "Anfiteatro Municipal",
           eventDate: new Date("2026-02-14T20:00:00"),
-          mpPublicKey: "",
-          mpAccessToken: "",
           emailFrom: "noreply@carnaval.com",
           emailEnabled: true,
         },
@@ -84,7 +87,18 @@ export async function PUT(req: NextRequest) {
     }
 
     // Preparar datos para actualizar (solo lo que viene en el body)
-    const updateData: any = {};
+    type UpdateData = {
+      ticketPrice?: number;
+      totalAvailable?: number;
+      maxPerPurchase?: number;
+      salesEnabled?: boolean;
+      eventName?: string;
+      eventDate?: Date;
+      eventLocation?: string;
+      emailFrom?: string | null;
+      emailEnabled?: boolean;
+    };
+    const updateData: UpdateData = {};
 
     // Entradas
     if (body.ticketPrice !== undefined) {
@@ -210,10 +224,14 @@ export async function PUT(req: NextRequest) {
         eventDate: saved.eventDate.toISOString(),
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error PUT /api/admin/settings:", error);
+    let errorMessage = "Error al guardar";
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
     return NextResponse.json(
-      { success: false, error: error?.message || "Error al guardar" },
+      { success: false, error: errorMessage },
       { status: 500 },
     );
   }
