@@ -130,7 +130,9 @@ export async function sendTicketEmailWithQRs(
     }
 
     return { success: true, messageId: result.data?.id };
-  } catch (err: any) {
-    return { success: false, error: err.message ?? "Error enviando email" };
+  } catch (err) {
+    const errorMessage =
+      err instanceof Error ? err.message : "Error enviando email";
+    return { success: false, error: errorMessage };
   }
 }
