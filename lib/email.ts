@@ -23,68 +23,47 @@ interface SendTicketEmailData {
   eventLocation: string;
 }
 
-/**
- * Genera el HTML del email (preview + fallback visual)
- */
-function getEmailHTML(data: SendTicketEmailData, qrDataUrls: string[]): string {
-  const ticketCards = qrDataUrls
-    .map(
-      (qr, i) => `
-      <div style="background:#fff;border-radius:12px;padding:20px;margin-bottom:16px">
-        <div style="text-align:center;margin-bottom:12px">
-          <strong>Entrada ${i + 1} de ${data.tickets.length}</strong>
-        </div>
-        <div style="text-align:center">
-          <img src="${qr}" style="max-width:260px;width:100%" />
-        </div>
-        <p style="font-family:monospace;font-size:12px;text-align:center;margin-top:8px">
-          ${data.tickets[i].qrCode}
-        </p>
-      </div>
-    `,
-    )
-    .join("");
-
+function getEmailHTML(data: SendTicketEmailData): string {
   return `
   <html>
     <body style="font-family:Arial;background:#f9fafb;padding:24px">
       <h2>🎭 ¡Tu compra fue exitosa!</h2>
       <p>Hola <strong>${data.buyerName}</strong>,</p>
       <p>
-        Adjuntamos tus <strong>entradas en PDF</strong> para ${data.eventName}.  
-        También te dejamos una vista previa abajo.
+        Te adjuntamos tus entradas en <strong>PDF</strong> para ${data.eventName}.
+        <br/>Tip: usá el PDF para ingresar (QR grande, 0 problemas).
       </p>
-
       <ul>
         <li><strong>Orden:</strong> ${data.orderNumber}</li>
+        <li><strong>Entradas:</strong> ${data.tickets.length}</li>
         <li><strong>Evento:</strong> ${data.eventName}</li>
         <li><strong>Fecha:</strong> ${data.eventDate}</li>
         <li><strong>Lugar:</strong> ${data.eventLocation}</li>
       </ul>
-
-      <h3>🎟️ Vista previa</h3>
-      ${ticketCards}
-
-      <p style="margin-top:24px;font-size:12px;color:#666">
-        Consejo: usá el PDF adjunto para ingresar al evento (QR más grande, cero problemas).
+      <p style="font-size:12px;color:#666;margin-top:20px">
+        Si necesitás soporte: soporte@carnaval.com
       </p>
     </body>
   </html>
   `;
 }
 
-/**
- * Envía el email con QRs + PDF adjunto
- */
 export async function sendTicketEmailWithQRs(
   data: SendTicketEmailData,
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
+    console.log("[tickets] sendTicketEmailWithQRs() start", {
+      to: data.to,
+      tickets: data.tickets.length,
+      order: data.orderNumber,
+    });
+
     if (!process.env.RESEND_API_KEY) {
+      console.error("[tickets] Missing RESEND_API_KEY");
       return { success: false, error: "RESEND_API_KEY no configurada" };
     }
 
-    // 1️⃣ Generar QRs
+    // 1) Generar QRs (solo para armar el PDF)
     const qrDataUrls = await Promise.all(
       data.tickets.map((t) =>
         generateQRImage(t.qrCode, {
@@ -95,7 +74,7 @@ export async function sendTicketEmailWithQRs(
       ),
     );
 
-    // 2️⃣ Generar PDF (1 entrada por página)
+    // 2) Generar PDF
     const pdfBuffer = await generateTicketsPdf({
       eventName: data.eventName,
       eventDate: data.eventDate,
@@ -106,11 +85,30 @@ export async function sendTicketEmailWithQRs(
       qrDataUrls,
     });
 
-    // 3️⃣ HTML del mail
-    const html = getEmailHTML(data, qrDataUrls);
+    // Logs de tamaño (IMPORTANTÍSIMO)
+    const pdfBytes = pdfBuffer.byteLength;
+    console.log(
+      "[tickets] pdf size bytes:",
+      pdfBytes,
+      "≈",
+      (pdfBytes / (1024 * 1024)).toFixed(2),
+      "MB",
+    );
 
-    // 4️⃣ Enviar
-    const result = await resend.emails.send({
+    // Si querés ser más estricto:
+    if (pdfBytes > 35 * 1024 * 1024) {
+      console.error("[tickets] PDF too large, aborting");
+      return {
+        success: false,
+        error: "El PDF es demasiado grande para enviarlo por email",
+      };
+    }
+
+    // 3) HTML liviano
+    const html = getEmailHTML(data);
+
+    // 4) Enviar
+    const { data: sent, error } = await resend.emails.send({
       from:
         process.env.EMAIL_FROM || "Carnavales Makallé <onboarding@resend.dev>",
       to: data.to,
@@ -125,14 +123,15 @@ export async function sendTicketEmailWithQRs(
       ],
     });
 
-    if (result.error) {
-      return { success: false, error: result.error.message };
+    if (error) {
+      console.error("[tickets] Resend error:", error);
+      return { success: false, error: error.message || "Resend error" };
     }
 
-    return { success: true, messageId: result.data?.id };
-  } catch (err) {
-    const errorMessage =
-      err instanceof Error ? err.message : "Error enviando email";
-    return { success: false, error: errorMessage };
+    console.log("[tickets] Email sent OK:", sent);
+    return { success: true, messageId: sent?.id };
+  } catch (err: any) {
+    console.error("[tickets] Unexpected error:", err);
+    return { success: false, error: err?.message ?? "Error enviando email" };
   }
 }
