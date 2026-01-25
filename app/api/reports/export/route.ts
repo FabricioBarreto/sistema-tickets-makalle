@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
       rows = tickets.map((t) => ({
         ticketCode: t.code,
         ticketStatus: t.status,
-        validated: t.validated,
+        validated: t.status === "VALIDATED", // ✅ antes era t.validated
         validatedAt: t.validatedAt ? t.validatedAt.toISOString() : "",
         orderNumber: t.order.orderNumber,
         buyerName: t.order.buyerName,

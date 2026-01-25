@@ -23,10 +23,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const code = qrCode.trim();
+
     // Buscar el ticket por QR hash o código manual
     const ticket = await prisma.ticket.findFirst({
       where: {
-        OR: [{ qrHash: qrCode.trim() }, { code: qrCode.trim() }],
+        OR: [{ qrHash: code }, { code }],
       },
       include: {
         order: {
@@ -44,14 +46,10 @@ export async function POST(req: NextRequest) {
         validations: {
           include: {
             user: {
-              select: {
-                name: true,
-              },
+              select: { name: true },
             },
           },
-          orderBy: {
-            timestamp: "desc",
-          },
+          orderBy: { timestamp: "desc" },
           take: 1,
         },
       },
@@ -59,16 +57,16 @@ export async function POST(req: NextRequest) {
 
     if (!ticket) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Entrada no encontrada",
-        },
+        { success: false, message: "Entrada no encontrada" },
         { status: 404 },
       );
     }
 
-    // Verificar si ya fue validada
-    if (ticket.validated) {
+    // ✅ Verificar si ya fue validada (sin campo validated)
+    const alreadyValidated =
+      ticket.status === "VALIDATED" || !!ticket.validatedAt;
+
+    if (alreadyValidated) {
       return NextResponse.json(
         {
           success: false,
@@ -80,7 +78,7 @@ export async function POST(req: NextRequest) {
             buyerEmail: ticket.order.buyerEmail,
             buyerDNI: ticket.order.buyerDNI,
             quantity: ticket.order.quantity,
-            validated: ticket.validated,
+            validated: true,
             validatedAt: ticket.validatedAt,
             validatedBy: ticket.validations[0]?.user || null,
           },
@@ -100,11 +98,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validar la entrada
+    // ✅ Validar la entrada (sin validated)
     const updatedTicket = await prisma.ticket.update({
       where: { id: ticket.id },
       data: {
-        validated: true,
         validatedAt: new Date(),
         status: "VALIDATED",
       },
@@ -136,9 +133,7 @@ export async function POST(req: NextRequest) {
       },
       include: {
         user: {
-          select: {
-            name: true,
-          },
+          select: { name: true },
         },
       },
     });
@@ -153,7 +148,7 @@ export async function POST(req: NextRequest) {
         buyerEmail: updatedTicket.order.buyerEmail,
         buyerDNI: updatedTicket.order.buyerDNI,
         quantity: updatedTicket.order.quantity,
-        validated: updatedTicket.validated,
+        validated: true, // ✅ lo devolvemos para tu UI
         validatedAt: updatedTicket.validatedAt,
         validatedBy: validation.user,
       },

@@ -28,8 +28,8 @@ model Order {
   orderNumber       String        @unique
   buyerName         String
   buyerEmail        String
-  buyerPhone        String
-  buyerDNI          String
+  buyerPhone        String?       // 👈 opcional
+  buyerDNI          String?       // 👈 opcional
   unitPrice         Decimal       @db.Decimal(10, 2)
   quantity          Int
   totalAmount       Decimal       @db.Decimal(10, 2)
@@ -43,6 +43,7 @@ model Order {
   tickets           Ticket[]
 
   @@index([buyerEmail])
+  @@index([buyerPhone])           // 👈 nuevo
   @@index([buyerDNI])
   @@index([orderNumber])
   @@index([mercadoPagoId])
@@ -53,8 +54,7 @@ model Ticket {
   id          String       @id @default(cuid())
   code        String       @unique
   qrHash      String       @unique
-  status      TicketStatus @default(PAID)
-  validated   Boolean      @default(false)
+  status      TicketStatus @default(PENDING_PAYMENT) // 👈 mejor default
   validatedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -65,7 +65,6 @@ model Ticket {
   @@index([orderId])
   @@index([qrHash])
   @@index([code])
-  @@index([validated])
   @@index([status])
 }
 

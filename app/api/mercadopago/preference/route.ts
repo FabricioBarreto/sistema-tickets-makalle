@@ -73,11 +73,11 @@ export async function POST(req: NextRequest) {
     interface PreferencePayer {
       name: string;
       email: string;
-      phone: {
+      phone?: {
         area_code: string;
         number: string;
       };
-      identification: {
+      identification?: {
         type: string;
         number: string;
       };
@@ -97,6 +97,30 @@ export async function POST(req: NextRequest) {
       notification_url?: string;
     }
 
+    // Base payer siempre
+    const payer: PreferencePayer = {
+      name: order.buyerName,
+      email: order.buyerEmail,
+    };
+
+    // ✅ Solo agregamos phone si existe y tiene algo útil
+    const phone = (order.buyerPhone ?? "").toString().trim();
+    if (phone.length > 0) {
+      payer.phone = {
+        area_code: "",
+        number: phone,
+      };
+    }
+
+    // ✅ Solo agregamos DNI si existe
+    const dni = (order.buyerDNI ?? "").toString().trim();
+    if (dni.length > 0) {
+      payer.identification = {
+        type: "DNI",
+        number: dni,
+      };
+    }
+
     const preferenceData: PreferenceData = {
       items: [
         {
@@ -107,18 +131,7 @@ export async function POST(req: NextRequest) {
           currency_id: "ARS",
         },
       ],
-      payer: {
-        name: order.buyerName,
-        email: order.buyerEmail,
-        phone: {
-          area_code: "",
-          number: order.buyerPhone,
-        },
-        identification: {
-          type: "DNI",
-          number: order.buyerDNI,
-        },
-      },
+      payer,
       back_urls,
       external_reference: order.id,
       statement_descriptor: "CARNAVAL",
@@ -141,6 +154,8 @@ export async function POST(req: NextRequest) {
       back_urls,
       auto_return: preferenceData.auto_return,
       notification_url: preferenceData.notification_url,
+      hasPhone: !!payer.phone,
+      hasDni: !!payer.identification,
     });
 
     const response = await fetch(
@@ -179,7 +194,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("❌ Error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
       { success: false, error: errorMessage },
       { status: 500 },

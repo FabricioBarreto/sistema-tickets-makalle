@@ -8,8 +8,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { buyerName, buyerEmail, buyerPhone, buyerDNI, quantity } = body;
 
-    // Validaciones básicas
-    if (!buyerName || !buyerEmail || !buyerPhone || !buyerDNI || !quantity) {
+    // Validaciones básicas (buyerPhone y buyerDNI ahora pueden ser opcionales)
+    if (!buyerName || !buyerEmail || !quantity) {
       return NextResponse.json(
         { success: false, error: "Faltan datos requeridos" },
         { status: 400 },
@@ -22,6 +22,17 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    // Normalizar opcionales a string|null (para Prisma)
+    const normalizedPhone =
+      typeof buyerPhone === "string" && buyerPhone.trim().length > 0
+        ? buyerPhone.trim()
+        : null;
+
+    const normalizedDni =
+      typeof buyerDNI === "string" && buyerDNI.trim().length > 0
+        ? buyerDNI.trim()
+        : null;
 
     // Obtener configuración
     const config = await prisma.systemConfig.findFirst();
@@ -69,8 +80,8 @@ export async function POST(req: NextRequest) {
         orderNumber,
         buyerName,
         buyerEmail,
-        buyerPhone,
-        buyerDNI,
+        buyerPhone: normalizedPhone, // ✅ ahora puede ser null
+        buyerDNI: normalizedDni, // ✅ ahora puede ser null
         unitPrice,
         quantity,
         totalAmount,
@@ -91,7 +102,8 @@ export async function POST(req: NextRequest) {
           code,
           qrHash,
           status: "PENDING_PAYMENT",
-          validated: false,
+          // ✅ validated: false (ELIMINADO)
+          // validatedAt queda null por default
         },
       });
 
@@ -114,15 +126,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("Error creating order:", error);
-    let errorMessage = "Error al crear la orden";
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    }
+    const errorMessage =
+      error instanceof Error ? error.message : "Error al crear la orden";
     return NextResponse.json(
-      {
-        success: false,
-        error: errorMessage,
-      },
+      { success: false, error: errorMessage },
       { status: 500 },
     );
   }

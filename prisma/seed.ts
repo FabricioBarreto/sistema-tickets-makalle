@@ -53,7 +53,6 @@ async function main() {
   console.log("✅ Usuario operador creado:", operator.email);
 
   // 3. Crear configuración del sistema
-  // ✅ SIN credenciales de Mercado Pago (ahora están en .env)
   const config = await prisma.systemConfig.create({
     data: {
       ticketPrice: 2000,
@@ -107,11 +106,13 @@ async function main() {
 
   console.log("\n📝 Creando órdenes y tickets...\n");
 
-  for (const orderData of ordersData) {
+  for (let orderIndex = 0; orderIndex < ordersData.length; orderIndex++) {
+    const orderData = ordersData[orderIndex];
+
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 8).toUpperCase();
     const orderNumber = `ORD-${timestamp}-${random}`;
-    const unitPrice = 2000;
+    const unitPrice = Number(config.ticketPrice);
     const totalAmount = unitPrice * orderData.quantity;
 
     const order = await prisma.order.create({
@@ -135,23 +136,29 @@ async function main() {
 
     // Crear tickets individuales para esta orden
     for (let i = 0; i < orderData.quantity; i++) {
-      // Código legible más simple
       const code = `${random}-${(i + 1).toString().padStart(2, "0")}`;
       const qrHash = generateQRHash(order.id, i);
+
+      // Bonus: el primer ticket de la primer orden lo marcamos como ya usado
+      const shouldBeValidated = orderIndex === 0 && i === 0;
 
       const ticket = await prisma.ticket.create({
         data: {
           orderId: order.id,
           code,
           qrHash,
-          status: "PAID",
-          validated: false,
+          status: shouldBeValidated ? "VALIDATED" : "PAID",
+          validatedAt: shouldBeValidated ? new Date() : null,
+          // ✅ validated: false (ELIMINADO)
         },
       });
 
-      console.log(`   ✓ Ticket ${i + 1}: ${code}`);
-      console.log(`     QR Hash: ${qrHash}`);
+      console.log(`   ✓ Ticket ${i + 1}: ${ticket.code}`);
+      console.log(
+        `     QR Hash: ${ticket.qrHash}${shouldBeValidated ? " (VALIDATED)" : ""}`,
+      );
     }
+
     console.log("");
   }
 
@@ -178,6 +185,9 @@ async function main() {
     console.log(`\n${index + 1}. ${ticket.order.buyerName}`);
     console.log(`   Código: ${ticket.code}`);
     console.log(`   QR Hash: ${ticket.qrHash}`);
+    console.log(
+      `   Estado: ${ticket.status}${ticket.validatedAt ? ` (validado ${ticket.validatedAt.toISOString()})` : ""}`,
+    );
   });
 
   console.log("\n" + "=".repeat(60));

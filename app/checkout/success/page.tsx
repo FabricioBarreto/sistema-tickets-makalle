@@ -16,8 +16,29 @@ interface Order {
   quantity: number;
   buyerName: string;
   buyerEmail: string;
+  buyerPhone?: string; // 👈 nuevo (si no existe, no se muestra WhatsApp)
   totalAmount: number;
   paymentStatus: string;
+}
+
+// Helpers WhatsApp (gratis = wa.me + mensaje prellenado)
+function normalizePhoneForWhatsApp(phone: string): string {
+  let digits = (phone || "").replace(/\D/g, "");
+
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (!digits.startsWith("54")) digits = "54" + digits;
+
+  // 011... => 54011... (arreglo)
+  digits = digits.replace(/^540/, "54");
+
+  // 54 + area + 15 + numero => sacamos el 15
+  digits = digits.replace(/^54(\d{2,4})15/, "54$1");
+
+  return digits;
+}
+
+function buildWaMeLink(phoneDigits: string, message: string): string {
+  return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}`;
 }
 
 function SuccessContent() {
@@ -42,6 +63,7 @@ function SuccessContent() {
         clearTimeout(timeout);
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
   const fetchOrder = async () => {
@@ -120,6 +142,22 @@ function SuccessContent() {
   }
 
   // Pago completado
+  const waPhoneDigits = order?.buyerPhone
+    ? normalizePhoneForWhatsApp(order.buyerPhone)
+    : null;
+
+  const waMessage = order
+    ? `Hola ${order.buyerName}! 👋
+Tu compra fue exitosa ✅
+Orden: ${order.orderNumber}
+Entradas: ${order.quantity}
+
+Te envié las entradas en PDF al email: ${order.buyerEmail}
+Si no te llegó, avisame por acá y te lo reenvío.`
+    : "Hola! Necesito ayuda con mi compra de entradas.";
+
+  const waLink = waPhoneDigits ? buildWaMeLink(waPhoneDigits, waMessage) : null;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center p-4">
       <div className="max-w-2xl w-full">
@@ -185,6 +223,23 @@ function SuccessContent() {
 
           {/* Actions */}
           <div className="space-y-3">
+            {waLink ? (
+              <a
+                href={waLink}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+              >
+                <Download className="w-5 h-5" />
+                Abrir WhatsApp con mis datos
+              </a>
+            ) : (
+              <div className="text-sm text-gray-500">
+                Si cargaste tu teléfono en la compra, acá te aparece el botón de
+                WhatsApp.
+              </div>
+            )}
+
             <button
               onClick={() => router.push("/")}
               className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
