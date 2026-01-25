@@ -130,8 +130,8 @@ export async function sendTicketEmailWithQRs(
 
     console.log("[tickets] Email sent OK:", sent);
     return { success: true, messageId: sent?.id };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[tickets] Unexpected error:", err);
-    return { success: false, error: err?.message ?? "Error enviando email" };
+    return { success: false, error: err instanceof Error ? err.message : "Error enviando email" };
   }
 }
