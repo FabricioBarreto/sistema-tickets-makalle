@@ -6,6 +6,14 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
   return Uint8Array.from(Buffer.from(base64, "base64"));
 }
 
+/**
+ * pdf-lib con StandardFonts usa WinAnsi => no soporta emojis ni muchos Unicode.
+ * Esto limpia cualquier caracter fuera de Latin-1 (0x00-0xFF).
+ */
+function safeText(text: string): string {
+  return (text ?? "").replace(/[^\x00-\xFF]/g, "");
+}
+
 export async function generateTicketsPdf(params: {
   eventName: string;
   eventDate: string;
@@ -13,7 +21,7 @@ export async function generateTicketsPdf(params: {
   orderNumber: string;
   buyerName: string;
   tickets: Array<{ qrCode: string }>;
-  qrDataUrls: string[]; // mismos índices que tickets
+  qrDataUrls: string[];
 }): Promise<Buffer> {
   const {
     eventName,
@@ -39,8 +47,8 @@ export async function generateTicketsPdf(params: {
     const margin = 48;
     const top = pageH - margin;
 
-    // Header
-    page.drawText("🎭 Tus Entradas", {
+    // Header (sin emoji para evitar quilombo)
+    page.drawText(safeText("Tus Entradas"), {
       x: margin,
       y: top,
       size: 22,
@@ -48,7 +56,7 @@ export async function generateTicketsPdf(params: {
       color: rgb(0.1, 0.1, 0.1),
     });
 
-    page.drawText(`${eventName}`, {
+    page.drawText(safeText(eventName), {
       x: margin,
       y: top - 30,
       size: 16,
@@ -56,15 +64,18 @@ export async function generateTicketsPdf(params: {
       color: rgb(0.15, 0.15, 0.15),
     });
 
-    page.drawText(`Orden: ${orderNumber}  |  Comprador: ${buyerName}`, {
-      x: margin,
-      y: top - 52,
-      size: 11,
-      font,
-      color: rgb(0.25, 0.25, 0.25),
-    });
+    page.drawText(
+      safeText(`Orden: ${orderNumber}  |  Comprador: ${buyerName}`),
+      {
+        x: margin,
+        y: top - 52,
+        size: 11,
+        font,
+        color: rgb(0.25, 0.25, 0.25),
+      },
+    );
 
-    page.drawText(`Fecha: ${eventDate}`, {
+    page.drawText(safeText(`Fecha: ${eventDate}`), {
       x: margin,
       y: top - 70,
       size: 11,
@@ -72,7 +83,7 @@ export async function generateTicketsPdf(params: {
       color: rgb(0.25, 0.25, 0.25),
     });
 
-    page.drawText(`Lugar: ${eventLocation}`, {
+    page.drawText(safeText(`Lugar: ${eventLocation}`), {
       x: margin,
       y: top - 86,
       size: 11,
@@ -81,7 +92,7 @@ export async function generateTicketsPdf(params: {
     });
 
     // Badge entrada
-    page.drawText(`ENTRADA #${i + 1} de ${tickets.length}`, {
+    page.drawText(safeText(`ENTRADA #${i + 1} de ${tickets.length}`), {
       x: margin,
       y: top - 120,
       size: 12,
@@ -91,10 +102,9 @@ export async function generateTicketsPdf(params: {
 
     // QR grande y centrado
     const qrBytes = dataUrlToUint8Array(qrDataUrls[i]);
-    // qrcode lib normalmente te da PNG
     const qrImage = await pdfDoc.embedPng(qrBytes);
 
-    const qrSize = 340; // grande => escanea hasta con un Nokia
+    const qrSize = 340;
     const qrX = (pageW - qrSize) / 2;
     const qrY = (pageH - qrSize) / 2 - 20;
 
@@ -109,10 +119,15 @@ export async function generateTicketsPdf(params: {
       borderWidth: 1,
     });
 
-    page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
+    page.drawImage(qrImage, {
+      x: qrX,
+      y: qrY,
+      width: qrSize,
+      height: qrSize,
+    });
 
     // Código de verificación abajo (mono)
-    page.drawText("CÓDIGO DE VERIFICACIÓN", {
+    page.drawText(safeText("CODIGO DE VERIFICACION"), {
       x: margin,
       y: qrY - 40,
       size: 9,
@@ -121,7 +136,7 @@ export async function generateTicketsPdf(params: {
     });
 
     const code = tickets[i].qrCode;
-    page.drawText(code, {
+    page.drawText(safeText(code), {
       x: margin,
       y: qrY - 58,
       size: 10,
@@ -132,7 +147,7 @@ export async function generateTicketsPdf(params: {
 
     // mini footer
     page.drawText(
-      "Mostrá este QR en el ingreso. Cada entrada se usa una sola vez.",
+      safeText("Mostra este QR en el ingreso. Cada entrada se usa una sola vez."),
       {
         x: margin,
         y: 40,
