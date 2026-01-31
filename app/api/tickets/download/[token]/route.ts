@@ -11,10 +11,10 @@ import { generateTicketsPdf } from "@/lib/pdf";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { token: string } },
+  { params }: { params: Promise<{ token: string }> },
 ) {
   try {
-    const { token } = params;
+    const { token } = await params;
 
     console.log(`[download] Token received: ${token}`);
 
@@ -83,8 +83,12 @@ export async function GET(
     const pdfSize = (pdfBuffer.byteLength / 1024).toFixed(2);
     console.log(`[download] PDF generated: ${pdfSize} KB`);
 
+    // ⭐ SOLUCIÓN: Convertir Buffer a Uint8Array para Next.js 15.5+
+    // Esto resuelve el error de tipo BodyInit
+    const uint8Array = new Uint8Array(pdfBuffer);
+
     // Retornar PDF como descarga
-    return new NextResponse(pdfBuffer, {
+    return new Response(uint8Array, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="Entradas-${order.orderNumber}.pdf"`,
@@ -93,12 +97,11 @@ export async function GET(
         "X-Ticket-Count": order.tickets.length.toString(),
       },
     });
-  } catch (error) {
-    console.error("[download] Error:", error);
+  } catch {
+    console.error("[download] Error generando PDF");
     return NextResponse.json(
       {
         error: "Error generando PDF",
-        details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },
     );
@@ -110,10 +113,10 @@ export async function GET(
  */
 export async function HEAD(
   request: NextRequest,
-  { params }: { params: { token: string } },
+  { params }: { params: Promise<{ token: string }> },
 ) {
   try {
-    const { token } = params;
+    const { token } = await params;
 
     const order = await prisma.order.findFirst({
       where: {
@@ -127,17 +130,17 @@ export async function HEAD(
     });
 
     if (!order) {
-      return new NextResponse(null, { status: 404 });
+      return new Response(null, { status: 404 });
     }
 
-    return new NextResponse(null, {
+    return new Response(null, {
       status: 200,
       headers: {
         "X-Order-Number": order.orderNumber,
         "X-Ticket-Count": order.tickets.length.toString(),
       },
     });
-  } catch (error) {
-    return new NextResponse(null, { status: 500 });
+  } catch {
+    return new Response(null, { status: 500 });
   }
 }

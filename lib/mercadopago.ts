@@ -63,16 +63,27 @@ export async function createPreference(params: CreatePreferenceParams) {
   return await preference.create({ body });
 }
 
+type GetPaymentStatusResult =
+  | { success: true; payment: unknown }
+  | { success: false; error: string };
+
+/**
+ * Obtiene el pago desde MercadoPago.
+ * Nota: devolvemos `unknown` para evitar `any` y porque el SDK puede cambiar el shape.
+ * Si después querés, lo tipamos bien con un interface.
+ */
 export async function getPaymentStatus(
   paymentId: string,
-): Promise<{ success: boolean; payment?: any; error?: string }> {
+): Promise<GetPaymentStatusResult> {
   try {
     const payment = new Payment(client);
     const result = await payment.get({ id: paymentId });
-    return { success: true, payment: result };
-  } catch (error: any) {
+    return { success: true, payment: result as unknown };
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     console.error("Error fetching payment:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: errorMessage };
   }
 }
 

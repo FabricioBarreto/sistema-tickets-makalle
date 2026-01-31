@@ -1,0 +1,20 @@
+// .eslintrc.json
+// Configuración para suprimir warnings no críticos durante el build
+
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    // Permitir variables con prefijo underscore (_)
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_",
+        "destructuredArrayIgnorePattern": "^_"
+      }
+    ],
+    // Hacer que los warnings de React Hooks sean avisos en lugar de errores
+    "react-hooks/exhaustive-deps": "warn"
+  }
+}

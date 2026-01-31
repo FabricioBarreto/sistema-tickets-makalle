@@ -65,11 +65,15 @@ export async function sendTicketWhatsAppTwilio(
       success: true,
       messageId: message.sid,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[twilio] Error sending message:", error);
+
+    const message =
+      error instanceof Error ? error.message : "Error desconocido";
+
     return {
       success: false,
-      error: error.message || "Error desconocido",
+      error: message,
     };
   }
 }

@@ -1,6 +1,7 @@
 // app/api/mercadopago/webhook/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { TicketStatus } from "@prisma/client";
 import crypto from "crypto";
 import {
   getPaymentStatus,
@@ -11,18 +12,33 @@ import { sendTicketEmailWithQRs } from "@/lib/email";
 import { sendTicketWhatsAppTwilio } from "@/lib/whatsapp-twilio";
 
 /**
+ * Tipo extendido para Payment de Mercado Pago con external_reference
+ */
+interface MPPaymentData {
+  id?: number;
+  status: string;
+  external_reference?: string;
+}
+
+/**
  * Genera token seguro para descarga de PDF
  */
 function generateDownloadToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+type WebhookBody = {
+  type?: string;
+  data?: { id?: string | number };
+};
+
 /**
  * POST /api/mercadopago/webhook
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const rawBody: unknown = await request.json();
+    const body = rawBody as WebhookBody;
 
     console.log("🔔 Webhook received:", JSON.stringify(body, null, 2));
 
@@ -31,20 +47,24 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentId = body.data?.id;
-    if (!paymentId) {
+    if (paymentId === undefined || paymentId === null) {
       return NextResponse.json({ received: true });
     }
 
-    console.log(`💳 Processing payment ID: ${paymentId}`);
+    const paymentIdStr = String(paymentId);
+    console.log(`💳 Processing payment ID: ${paymentIdStr}`);
 
-    const paymentInfo = await getPaymentStatus(paymentId);
-    if (!paymentInfo.success || !paymentInfo.payment) {
+    const paymentInfo = await getPaymentStatus(paymentIdStr);
+
+    // ✅ FIX: narrowing correcto del union type (no tocar .error si success=true)
+    if (!paymentInfo.success) {
       console.error("❌ Failed to get payment info:", paymentInfo.error);
       return NextResponse.json({ received: true });
     }
 
-    const payment = paymentInfo.payment;
-    const orderId = payment.externalReference;
+    // En success branch existe payment
+    const payment = paymentInfo.payment as MPPaymentData;
+    const orderId = payment.external_reference;
 
     if (!orderId) {
       console.error("❌ No external reference found in payment");
@@ -55,9 +75,7 @@ export async function POST(request: NextRequest) {
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: {
-        tickets: true,
-      },
+      include: { tickets: true },
     });
 
     if (!order || !order.tickets || order.tickets.length === 0) {
@@ -67,7 +85,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`🎫 Found order with ${order.tickets.length} tickets`);
 
-    const ticketStatus = mapMPStatusToInternal(payment.status);
+    const ticketStatus = mapMPStatusToInternal(payment.status) as TicketStatus;
     const paymentStatus = mapMPStatusToPaymentStatus(payment.status);
 
     // Generar token de descarga si no existe
@@ -90,9 +108,7 @@ export async function POST(request: NextRequest) {
     // Actualizar tickets
     await prisma.ticket.updateMany({
       where: { orderId: order.id },
-      data: {
-        status: ticketStatus,
-      },
+      data: { status: ticketStatus },
     });
 
     console.log(`✅ Updated order and tickets - Status: ${ticketStatus}`);
@@ -155,8 +171,8 @@ export async function POST(request: NextRequest) {
             emailResult.error,
           );
         }
-      } catch (emailError) {
-        console.error("❌ EMAIL exception:", emailError);
+      } catch (err: unknown) {
+        console.error("❌ EMAIL exception", err);
       }
 
       // ========================================
@@ -206,13 +222,8 @@ export async function POST(request: NextRequest) {
               );
             }
           }
-        } catch (whatsappError) {
-          console.log(
-            "⚠️  WhatsApp exception (not critical):",
-            whatsappError instanceof Error
-              ? whatsappError.message
-              : whatsappError,
-          );
+        } catch (err: unknown) {
+          console.log("⚠️  WhatsApp exception (not critical)", err);
           console.log(
             "ℹ️  (This is normal if Meta hasn't approved the template yet)",
           );
@@ -227,7 +238,13 @@ export async function POST(request: NextRequest) {
       console.log("\n📊 Notification Summary:");
       console.log(`   📧 Email: ${emailSent ? "✅ Sent" : "❌ Failed"}`);
       console.log(
-        `   📱 WhatsApp: ${whatsappSent ? "✅ Sent" : order.buyerPhone ? "⚠️  Skipped/Failed" : "⏭️  No phone"}`,
+        `   📱 WhatsApp: ${
+          whatsappSent
+            ? "✅ Sent"
+            : order.buyerPhone
+              ? "⚠️  Skipped/Failed"
+              : "⏭️  No phone"
+        }`,
       );
       console.log(`   🔗 Download link: ${downloadUrl}\n`);
 

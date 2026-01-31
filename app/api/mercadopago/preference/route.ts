@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       },
       notification_url: `${appUrl}/api/mercadopago/webhook`,
       hasPhone: !!order.buyerPhone,
-      hasDni: !!order.buyerDni,
+      hasDni: !!order.buyerDNI, // ⭐ CAMBIO: buyerDNI en mayúsculas
     });
 
     const preference = await createPreference({
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       buyerEmail: order.buyerEmail,
       buyerName: order.buyerName,
       buyerPhone: order.buyerPhone || undefined,
-      buyerDni: order.buyerDni || undefined,
+      buyerDni: order.buyerDNI || undefined, // ⭐ CAMBIO: buyerDNI en mayúsculas
       successUrl,
       failureUrl,
       pendingUrl,

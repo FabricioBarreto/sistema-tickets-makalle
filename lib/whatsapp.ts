@@ -1,5 +1,6 @@
 // lib/whatsapp.ts (VERSIÓN COMPLETA CON PDF)
 import axios from "axios";
+import FormData from "form-data";
 
 const WA_API_URL = "https://graph.facebook.com/v22.0";
 const WA_PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!;
@@ -153,7 +154,6 @@ export async function sendTicketWhatsAppPDF(
     // Paso 1: Subir el PDF a WhatsApp Media API
     const uploadUrl = `${WA_API_URL}/${WA_PHONE_ID}/media`;
 
-    const FormData = require("form-data");
     const formData = new FormData();
     formData.append("messaging_product", "whatsapp");
     formData.append("file", params.pdfBuffer, {
