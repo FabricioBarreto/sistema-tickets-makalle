@@ -102,6 +102,7 @@ function CheckoutContent() {
 
     try {
       // 1) Crear la orden + tickets
+      console.log("📦 Creando orden...");
       const createRes = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -112,6 +113,8 @@ function CheckoutContent() {
       });
 
       const createText = await createRes.text();
+      console.log("📦 Response texto:", createText);
+
       if (!createRes.ok) {
         throw new Error(
           `Error creando orden (${createRes.status}): ${createText}`,
@@ -119,14 +122,17 @@ function CheckoutContent() {
       }
 
       const createData = createText ? JSON.parse(createText) : null;
+      console.log("📦 Orden creada:", createData);
 
       if (!createData?.success) {
         throw new Error(createData?.error || "Error al crear la orden");
       }
 
       const { id: orderId } = createData.data;
+      console.log("✅ Order ID:", orderId);
 
       // 2) Crear preferencia de Mercado Pago
+      console.log("💳 Creando preferencia MP...");
       const mpRes = await fetch("/api/mercadopago/preference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -134,11 +140,14 @@ function CheckoutContent() {
       });
 
       const mpText = await mpRes.text();
+      console.log("💳 MP Response texto:", mpText);
+
       if (!mpRes.ok) {
         throw new Error(`Error MP (${mpRes.status}): ${mpText}`);
       }
 
       const mpData = mpText ? JSON.parse(mpText) : null;
+      console.log("💳 MP Data parseado:", mpData);
 
       if (!mpData?.success) {
         throw new Error(
@@ -146,10 +155,18 @@ function CheckoutContent() {
         );
       }
 
+      // 👇 AGREGAR VALIDACIÓN EXTRA
+      if (!mpData.initPoint) {
+        console.error("❌ MP Data completo:", JSON.stringify(mpData, null, 2));
+        throw new Error("No se recibió el link de pago de Mercado Pago");
+      }
+
+      console.log("✅ Redirigiendo a:", mpData.initPoint);
+
       // 3) Redirigir a Mercado Pago
       window.location.href = mpData.initPoint;
     } catch (error: unknown) {
-      console.error("Error:", error);
+      console.error("❌ Error completo:", error);
       if (error instanceof Error) {
         toast.error(error.message || "Error al procesar la compra");
       } else {
