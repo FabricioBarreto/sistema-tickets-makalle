@@ -1,4 +1,4 @@
-// app/api/mercadopago/webhook/route.ts
+// app/api/mercadopago/webhook/test/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { TicketStatus } from "@prisma/client";
@@ -11,67 +11,56 @@ import {
 import { sendTicketEmailWithQRs } from "@/lib/email";
 import { sendTicketWhatsAppTwilio } from "@/lib/whatsapp-twilio";
 
-/**
- * Tipo extendido para Payment de Mercado Pago con external_reference
- */
 interface MPPaymentData {
   id?: number;
   status: string;
   external_reference?: string;
 }
 
-/**
- * Genera token seguro para descarga de PDF
- */
 function generateDownloadToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-type WebhookBody = {
-  type?: string;
-  data?: { id?: string | number };
-};
-
 /**
- * POST /api/mercadopago/webhook
+ * GET /api/mercadopago/webhook/test?paymentId=XXXX
+ * Endpoint para forzar procesamiento manual de un pago
  */
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const rawBody: unknown = await request.json();
-    const body = rawBody as WebhookBody;
+    const searchParams = request.nextUrl.searchParams;
+    const paymentId = searchParams.get("paymentId");
 
-    console.log("🔔 Webhook received:", JSON.stringify(body, null, 2));
-
-    if (body.type !== "payment") {
-      return NextResponse.json({ received: true });
+    if (!paymentId) {
+      return NextResponse.json(
+        { success: false, error: "paymentId required" },
+        { status: 400 },
+      );
     }
 
-    const paymentId = body.data?.id;
-    if (paymentId === undefined || paymentId === null) {
-      return NextResponse.json({ received: true });
-    }
+    console.log(`🧪 Manual webhook test for payment: ${paymentId}`);
 
-    const paymentIdStr = String(paymentId);
-    console.log(`💳 Processing payment ID: ${paymentIdStr}`);
+    const paymentInfo = await getPaymentStatus(paymentId);
 
-    const paymentInfo = await getPaymentStatus(paymentIdStr);
-
-    // ✅ FIX: narrowing correcto del union type (no tocar .error si success=true)
     if (!paymentInfo.success) {
-      console.error("❌ Failed to get payment info:", paymentInfo.error);
-      return NextResponse.json({ received: true });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Failed to get payment info",
+          details: paymentInfo.error,
+        },
+        { status: 500 },
+      );
     }
 
-    // En success branch existe payment
     const payment = paymentInfo.payment as MPPaymentData;
     const orderId = payment.external_reference;
 
     if (!orderId) {
-      console.error("❌ No external reference found in payment");
-      return NextResponse.json({ received: true });
+      return NextResponse.json(
+        { success: false, error: "No external reference in payment" },
+        { status: 404 },
+      );
     }
-
-    console.log(`📦 Processing order ID: ${orderId}`);
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
@@ -79,22 +68,20 @@ export async function POST(request: NextRequest) {
     });
 
     if (!order || !order.tickets || order.tickets.length === 0) {
-      console.error("❌ Order not found or has no tickets:", orderId);
-      return NextResponse.json({ received: true });
+      return NextResponse.json(
+        { success: false, error: "Order not found" },
+        { status: 404 },
+      );
     }
-
-    console.log(`🎫 Found order with ${order.tickets.length} tickets`);
 
     const ticketStatus = mapMPStatusToInternal(payment.status) as TicketStatus;
     const paymentStatus = mapMPStatusToPaymentStatus(payment.status);
 
-    // Generar token de descarga si no existe
     let downloadToken = order.downloadToken;
     if (!downloadToken) {
       downloadToken = generateDownloadToken();
     }
 
-    // Actualizar orden
     await prisma.order.update({
       where: { id: order.id },
       data: {
@@ -105,19 +92,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Actualizar tickets
     await prisma.ticket.updateMany({
       where: { orderId: order.id },
       data: { status: ticketStatus },
     });
 
-    console.log(`✅ Updated order and tickets - Status: ${ticketStatus}`);
+    console.log(`✅ Order updated: ${order.orderNumber}`);
 
-    // Si el pago fue aprobado, enviar notificaciones
     if (payment.status === "approved") {
-      console.log("💳 Payment approved! Sending notifications...");
-
-      // Preparar datos comunes
       const config = await prisma.systemConfig.findFirst();
       const eventName = config?.eventName || "Carnavales Makallé 2026";
       const eventDate =
@@ -141,14 +123,7 @@ export async function POST(request: NextRequest) {
         },
       }));
 
-      // Variables para tracking de notificaciones
-      let emailSent = false;
-      let whatsappSent = false;
-
-      // ========================================
-      // 1. ENVÍO POR EMAIL (CRÍTICO)
-      // ========================================
-      console.log("[notifications] 📧 Attempting EMAIL delivery...");
+      // Enviar email
       try {
         const emailResult = await sendTicketEmailWithQRs({
           to: order.buyerEmail,
@@ -161,41 +136,19 @@ export async function POST(request: NextRequest) {
           downloadUrl,
         });
 
-        if (emailResult.success) {
-          emailSent = true;
-          console.log(`✅ EMAIL sent successfully to ${order.buyerEmail}`);
-          console.log(`📧 Message ID: ${emailResult.messageId}`);
-        } else {
-          console.error(
-            `❌ EMAIL failed to ${order.buyerEmail}:`,
-            emailResult.error,
-          );
-        }
-      } catch (err: unknown) {
-        console.error("❌ EMAIL exception", err);
+        console.log(`Email: ${emailResult.success ? "✅ Sent" : "❌ Failed"}`);
+      } catch (emailError) {
+        console.error("Email error:", emailError);
       }
 
-      // ========================================
-      // 2. ENVÍO POR WHATSAPP (OPCIONAL)
-      // ========================================
+      // Intentar WhatsApp
       if (order.buyerPhone) {
-        console.log("[notifications] 📱 Attempting WhatsApp delivery...");
-
         try {
-          // Verificar que las credenciales estén configuradas
           if (
-            !process.env.TWILIO_ACCOUNT_SID ||
-            !process.env.TWILIO_AUTH_TOKEN
+            process.env.TWILIO_ACCOUNT_SID &&
+            process.env.TWILIO_AUTH_TOKEN &&
+            process.env.TWILIO_CONTENT_SID
           ) {
-            console.log(
-              "⚠️  WhatsApp: Twilio credentials not configured, skipping",
-            );
-          } else if (!process.env.TWILIO_CONTENT_SID) {
-            console.log(
-              "⚠️  WhatsApp: Template not configured (waiting for Meta approval), skipping",
-            );
-          } else {
-            // Intentar enviar
             const whatsappResult = await sendTicketWhatsAppTwilio({
               to: order.buyerPhone,
               buyerName: order.buyerName,
@@ -207,71 +160,31 @@ export async function POST(request: NextRequest) {
               downloadUrl,
             });
 
-            if (whatsappResult.success) {
-              whatsappSent = true;
-              console.log(
-                `✅ WhatsApp sent successfully to ${order.buyerPhone}`,
-              );
-              console.log(`📱 Message SID: ${whatsappResult.messageId}`);
-            } else {
-              console.log(
-                `⚠️  WhatsApp failed to ${order.buyerPhone}: ${whatsappResult.error}`,
-              );
-              console.log(
-                "ℹ️  (Template may be pending Meta approval - this is expected)",
-              );
-            }
+            console.log(
+              `WhatsApp: ${whatsappResult.success ? "✅ Sent" : "⚠️ Failed"}`,
+            );
           }
-        } catch (err: unknown) {
-          console.log("⚠️  WhatsApp exception (not critical)", err);
-          console.log(
-            "ℹ️  (This is normal if Meta hasn't approved the template yet)",
-          );
+        } catch (whatsappError) {
+          console.log("WhatsApp skipped");
         }
-      } else {
-        console.log("ℹ️  No phone number provided, skipping WhatsApp");
       }
-
-      // ========================================
-      // 3. RESUMEN DE NOTIFICACIONES
-      // ========================================
-      console.log("\n📊 Notification Summary:");
-      console.log(`   📧 Email: ${emailSent ? "✅ Sent" : "❌ Failed"}`);
-      console.log(
-        `   📱 WhatsApp: ${
-          whatsappSent
-            ? "✅ Sent"
-            : order.buyerPhone
-              ? "⚠️  Skipped/Failed"
-              : "⏭️  No phone"
-        }`,
-      );
-      console.log(`   🔗 Download link: ${downloadUrl}\n`);
-
-      // Advertencia si email falló (es crítico)
-      if (!emailSent) {
-        console.error(
-          "⚠️  WARNING: EMAIL delivery failed - customer will need to use download link",
-        );
-      }
-    } else {
-      console.log(
-        `⏸️  Payment status is ${payment.status}, not sending notifications yet`,
-      );
     }
 
-    return NextResponse.json({ received: true });
+    return NextResponse.json({
+      success: true,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      paymentStatus,
+      ticketStatus,
+    });
   } catch (error: unknown) {
-    console.error("❌ Webhook error:", error);
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ received: true, error: errorMessage });
+    console.error("Test webhook error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: "active",
-    message: "Mercado Pago webhook endpoint",
-  });
 }
