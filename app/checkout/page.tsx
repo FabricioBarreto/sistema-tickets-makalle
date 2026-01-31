@@ -101,13 +101,21 @@ function CheckoutContent() {
     setLoading(true);
 
     try {
+      // Normalizar teléfono (agregar +54 si no lo tiene)
+      let phone = formData.buyerPhone.replace(/[^0-9+]/g, "");
+      if (!phone.startsWith("+")) {
+        phone = "+54" + phone;
+      }
+
+      console.log("📦 Creando orden con teléfono normalizado:", phone);
+
       // 1) Crear la orden + tickets
-      console.log("📦 Creando orden...");
       const createRes = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          buyerPhone: phone, // 👈 Usar teléfono normalizado
           quantity,
         }),
       });
@@ -155,7 +163,6 @@ function CheckoutContent() {
         );
       }
 
-      // 👇 AGREGAR VALIDACIÓN EXTRA
       if (!mpData.initPoint) {
         console.error("❌ MP Data completo:", JSON.stringify(mpData, null, 2));
         throw new Error("No se recibió el link de pago de Mercado Pago");
