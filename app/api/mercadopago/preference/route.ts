@@ -1,7 +1,10 @@
-// app/api/mercadopago/preference/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPreference } from "@/lib/mercadopago";
+
+function normalizeUrl(url: string): string {
+  return url.replace(/\/+$/, "");
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,7 +37,8 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ Orden encontrada:", order.orderNumber);
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const rawUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const appUrl = normalizeUrl(rawUrl);
     const isLocal = appUrl.includes("localhost");
 
     const successUrl = `${appUrl}/checkout/success?orderId=${orderId}`;
@@ -42,7 +46,7 @@ export async function POST(request: NextRequest) {
     const pendingUrl = `${appUrl}/checkout/pending?orderId=${orderId}`;
     const notificationUrl = `${appUrl}/api/mercadopago/webhook`;
 
-    console.log("🚀 Creando preferencia MP con:", {
+    console.log("🚀 Creando preferencia MP:", {
       orderId,
       appUrl,
       localMode: isLocal,
@@ -89,7 +93,7 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error("❌ Error completo en MP preference:", error);
     console.error("❌ Stack:", error instanceof Error ? error.stack : "N/A");
-    
+
     return NextResponse.json(
       {
         success: false,

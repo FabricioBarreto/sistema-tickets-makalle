@@ -1,4 +1,3 @@
-// app/api/mercadopago/webhook/test/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { TicketStatus } from "@prisma/client";
@@ -21,46 +20,46 @@ function generateDownloadToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-/**
- * GET /api/mercadopago/webhook/test?paymentId=XXXX
- * Endpoint para forzar procesamiento manual de un pago
- */
-export async function GET(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams;
-    const paymentId = searchParams.get("paymentId");
+type WebhookBody = {
+  type?: string;
+  data?: { id?: string | number };
+};
 
-    if (!paymentId) {
-      return NextResponse.json(
-        { success: false, error: "paymentId required" },
-        { status: 400 },
-      );
+export async function POST(request: NextRequest) {
+  try {
+    const rawBody: unknown = await request.json();
+    const body = rawBody as WebhookBody;
+
+    console.log("🔔 Webhook received:", JSON.stringify(body, null, 2));
+
+    if (body.type !== "payment") {
+      return NextResponse.json({ received: true });
     }
 
-    console.log(`🧪 Manual webhook test for payment: ${paymentId}`);
+    const paymentId = body.data?.id;
+    if (paymentId === undefined || paymentId === null) {
+      return NextResponse.json({ received: true });
+    }
 
-    const paymentInfo = await getPaymentStatus(paymentId);
+    const paymentIdStr = String(paymentId);
+    console.log(`💳 Processing payment ID: ${paymentIdStr}`);
+
+    const paymentInfo = await getPaymentStatus(paymentIdStr);
 
     if (!paymentInfo.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Failed to get payment info",
-          details: paymentInfo.error,
-        },
-        { status: 500 },
-      );
+      console.error("❌ Failed to get payment info:", paymentInfo.error);
+      return NextResponse.json({ received: true });
     }
 
     const payment = paymentInfo.payment as MPPaymentData;
     const orderId = payment.external_reference;
 
     if (!orderId) {
-      return NextResponse.json(
-        { success: false, error: "No external reference in payment" },
-        { status: 404 },
-      );
+      console.error("❌ No external reference found in payment");
+      return NextResponse.json({ received: true });
     }
+
+    console.log(`📦 Processing order ID: ${orderId}`);
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
@@ -68,11 +67,11 @@ export async function GET(request: NextRequest) {
     });
 
     if (!order || !order.tickets || order.tickets.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Order not found" },
-        { status: 404 },
-      );
+      console.error("❌ Order not found or has no tickets:", orderId);
+      return NextResponse.json({ received: true });
     }
+
+    console.log(`🎫 Found order with ${order.tickets.length} tickets`);
 
     const ticketStatus = mapMPStatusToInternal(payment.status) as TicketStatus;
     const paymentStatus = mapMPStatusToPaymentStatus(payment.status);
@@ -97,9 +96,11 @@ export async function GET(request: NextRequest) {
       data: { status: ticketStatus },
     });
 
-    console.log(`✅ Order updated: ${order.orderNumber}`);
+    console.log(`✅ Updated order and tickets - Status: ${ticketStatus}`);
 
     if (payment.status === "approved") {
+      console.log("💳 Payment approved! Sending notifications...");
+
       const config = await prisma.systemConfig.findFirst();
       const eventName = config?.eventName || "Carnavales Makallé 2026";
       const eventDate =
@@ -110,8 +111,8 @@ export async function GET(request: NextRequest) {
         }) || "Febrero 2026";
       const eventLocation = config?.eventLocation || "Makallé, Chaco";
 
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const rawUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const baseUrl = rawUrl.replace(/\/+$/, "");
       const downloadUrl = `${baseUrl}/api/tickets/download/${downloadToken}`;
 
       const ticketsData = order.tickets.map((ticket) => ({
@@ -123,7 +124,10 @@ export async function GET(request: NextRequest) {
         },
       }));
 
-      // Enviar email
+      let emailSent = false;
+      let whatsappSent = false;
+
+      console.log("[notifications] 📧 Attempting EMAIL delivery...");
       try {
         const emailResult = await sendTicketEmailWithQRs({
           to: order.buyerEmail,
@@ -136,19 +140,36 @@ export async function GET(request: NextRequest) {
           downloadUrl,
         });
 
-        console.log(`Email: ${emailResult.success ? "✅ Sent" : "❌ Failed"}`);
-      } catch (emailError) {
-        console.error("Email error:", emailError);
+        if (emailResult.success) {
+          emailSent = true;
+          console.log(`✅ EMAIL sent successfully to ${order.buyerEmail}`);
+          console.log(`📧 Message ID: ${emailResult.messageId}`);
+        } else {
+          console.error(
+            `❌ EMAIL failed to ${order.buyerEmail}:`,
+            emailResult.error,
+          );
+        }
+      } catch (err: unknown) {
+        console.error("❌ EMAIL exception", err);
       }
 
-      // Intentar WhatsApp
       if (order.buyerPhone) {
+        console.log("[notifications] 📱 Attempting WhatsApp delivery...");
+
         try {
           if (
-            process.env.TWILIO_ACCOUNT_SID &&
-            process.env.TWILIO_AUTH_TOKEN &&
-            process.env.TWILIO_CONTENT_SID
+            !process.env.TWILIO_ACCOUNT_SID ||
+            !process.env.TWILIO_AUTH_TOKEN
           ) {
+            console.log(
+              "⚠️  WhatsApp: Twilio credentials not configured, skipping",
+            );
+          } else if (!process.env.TWILIO_CONTENT_SID) {
+            console.log(
+              "⚠️  WhatsApp: Template not configured (waiting for Meta approval), skipping",
+            );
+          } else {
             const whatsappResult = await sendTicketWhatsAppTwilio({
               to: order.buyerPhone,
               buyerName: order.buyerName,
@@ -160,31 +181,67 @@ export async function GET(request: NextRequest) {
               downloadUrl,
             });
 
-            console.log(
-              `WhatsApp: ${whatsappResult.success ? "✅ Sent" : "⚠️ Failed"}`,
-            );
+            if (whatsappResult.success) {
+              whatsappSent = true;
+              console.log(
+                `✅ WhatsApp sent successfully to ${order.buyerPhone}`,
+              );
+              console.log(`📱 Message SID: ${whatsappResult.messageId}`);
+            } else {
+              console.log(
+                `⚠️  WhatsApp failed to ${order.buyerPhone}: ${whatsappResult.error}`,
+              );
+              console.log(
+                "ℹ️  (Template may be pending Meta approval - this is expected)",
+              );
+            }
           }
-        } catch (whatsappError) {
-          console.log("WhatsApp skipped");
+        } catch (err: unknown) {
+          console.log("⚠️  WhatsApp exception (not critical)", err);
+          console.log(
+            "ℹ️  (This is normal if Meta hasn't approved the template yet)",
+          );
         }
+      } else {
+        console.log("ℹ️  No phone number provided, skipping WhatsApp");
       }
+
+      console.log("\n📊 Notification Summary:");
+      console.log(`   📧 Email: ${emailSent ? "✅ Sent" : "❌ Failed"}`);
+      console.log(
+        `   📱 WhatsApp: ${
+          whatsappSent
+            ? "✅ Sent"
+            : order.buyerPhone
+              ? "⚠️  Skipped/Failed"
+              : "⏭️  No phone"
+        }`,
+      );
+      console.log(`   🔗 Download link: ${downloadUrl}\n`);
+
+      if (!emailSent) {
+        console.error(
+          "⚠️  WARNING: EMAIL delivery failed - customer will need to use download link",
+        );
+      }
+    } else {
+      console.log(
+        `⏸️  Payment status is ${payment.status}, not sending notifications yet`,
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      paymentStatus,
-      ticketStatus,
-    });
+    return NextResponse.json({ received: true });
   } catch (error: unknown) {
-    console.error("Test webhook error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+    console.error("❌ Webhook error:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ received: true, error: errorMessage });
   }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    status: "active",
+    message: "Mercado Pago webhook endpoint",
+  });
 }
