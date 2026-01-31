@@ -10,12 +10,18 @@ import {
   DollarSign,
   Calendar,
   Mail,
-  CreditCard,
-  ShieldCheck,
   ToggleLeft,
   ToggleRight,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+
+type EventDate = {
+  id: string;
+  date: string; // datetime-local format
+  name: string; // ej: "Día 1", "Día 2", "Día 3"
+};
 
 type ConfigState = {
   ticketPrice: number;
@@ -24,7 +30,7 @@ type ConfigState = {
   salesEnabled: boolean;
 
   eventName: string;
-  eventDate: string; // datetime-local
+  eventDates: EventDate[];
   eventLocation: string;
 
   emailFrom: string;
@@ -61,7 +67,7 @@ export default function SettingsPage() {
     salesEnabled: true,
 
     eventName: "",
-    eventDate: "",
+    eventDates: [],
     eventLocation: "",
 
     emailFrom: "",
@@ -70,7 +76,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadConfig();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadConfig = async () => {
@@ -88,6 +93,18 @@ export default function SettingsPage() {
 
       const c = data.data;
 
+      // Parse event dates from stored format
+      let eventDates: EventDate[] = [];
+      try {
+        if (c.eventDates && typeof c.eventDates === "string") {
+          eventDates = JSON.parse(c.eventDates);
+        } else if (Array.isArray(c.eventDates)) {
+          eventDates = c.eventDates;
+        }
+      } catch (e) {
+        console.error("Error parsing eventDates:", e);
+      }
+
       setCfg({
         ticketPrice: Number(c.ticketPrice ?? 0),
         totalAvailable: Number(c.totalAvailable ?? 0),
@@ -95,7 +112,10 @@ export default function SettingsPage() {
         salesEnabled: Boolean(c.salesEnabled ?? true),
 
         eventName: c.eventName ?? "",
-        eventDate: c.eventDate ? toDatetimeLocal(c.eventDate) : "",
+        eventDates: eventDates.map((d) => ({
+          ...d,
+          date: d.date ? toDatetimeLocal(d.date) : "",
+        })),
         eventLocation: c.eventLocation ?? "",
 
         emailFrom: c.emailFrom ?? "",
@@ -141,6 +161,35 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const addEventDate = () => {
+    const newDate: EventDate = {
+      id: Date.now().toString(),
+      name: `Día ${cfg.eventDates.length + 1}`,
+      date: "",
+    };
+    setCfg((p) => ({ ...p, eventDates: [...p.eventDates, newDate] }));
+  };
+
+  const removeEventDate = (id: string) => {
+    setCfg((p) => ({
+      ...p,
+      eventDates: p.eventDates.filter((d) => d.id !== id),
+    }));
+  };
+
+  const updateEventDate = (
+    id: string,
+    field: keyof EventDate,
+    value: string,
+  ) => {
+    setCfg((p) => ({
+      ...p,
+      eventDates: p.eventDates.map((d) =>
+        d.id === id ? { ...d, [field]: value } : d,
+      ),
+    }));
   };
 
   const validations = useMemo(() => {
@@ -276,7 +325,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Configuración del Evento */}
-        <Card className="p-6">
+        <Card className="p-6 lg:col-span-1">
           <div className="flex items-center space-x-3 mb-6">
             <div className="bg-blue-100 rounded-lg p-2">
               <Calendar className="h-5 w-5 text-blue-600" />
@@ -294,24 +343,8 @@ export default function SettingsPage() {
                   setCfg((p) => ({ ...p, eventName: e.target.value }))
                 }
                 className="mt-1"
+                placeholder="Carnaval 2026"
               />
-            </div>
-
-            <div>
-              <Label htmlFor="eventDate">Fecha del Evento</Label>
-              <Input
-                id="eventDate"
-                type="datetime-local"
-                value={cfg.eventDate}
-                onChange={(e) =>
-                  setCfg((p) => ({ ...p, eventDate: e.target.value }))
-                }
-                className="mt-1"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                La fecha se almacena en formato ISO para garantizar consistencia
-                horaria.
-              </p>
             </div>
 
             <div>
@@ -323,7 +356,66 @@ export default function SettingsPage() {
                   setCfg((p) => ({ ...p, eventLocation: e.target.value }))
                 }
                 className="mt-1"
+                placeholder="Corsódromo Makallé"
               />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Fechas del Evento</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={addEventDate}
+                  className="h-8"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Agregar
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {cfg.eventDates.map((eventDate, idx) => (
+                  <div
+                    key={eventDate.id}
+                    className="border rounded-lg p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Input
+                        value={eventDate.name}
+                        onChange={(e) =>
+                          updateEventDate(eventDate.id, "name", e.target.value)
+                        }
+                        placeholder="Día 1"
+                        className="flex-1 mr-2"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => removeEventDate(eventDate.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <Input
+                      type="datetime-local"
+                      value={eventDate.date}
+                      onChange={(e) =>
+                        updateEventDate(eventDate.id, "date", e.target.value)
+                      }
+                    />
+                  </div>
+                ))}
+
+                {cfg.eventDates.length === 0 && (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    No hay fechas configuradas. Haz clic en &quot;Agregar&quot; para crear
+                    una.
+                  </p>
+                )}
+              </div>
             </div>
 
             <Button
@@ -331,9 +423,12 @@ export default function SettingsPage() {
               onClick={() =>
                 putConfig({
                   eventName: cfg.eventName,
-                  eventDate: cfg.eventDate
-                    ? fromDatetimeLocalToIso(cfg.eventDate)
-                    : "",
+                  eventDates: JSON.stringify(
+                    cfg.eventDates.map((d) => ({
+                      ...d,
+                      date: d.date ? fromDatetimeLocalToIso(d.date) : "",
+                    })),
+                  ),
                   eventLocation: cfg.eventLocation,
                 })
               }
@@ -358,8 +453,7 @@ export default function SettingsPage() {
               <div>
                 <div className="font-medium">Emails habilitados</div>
                 <p className="text-xs text-gray-600">
-                  Si está apagado, no se envía nada (ni confirmaciones, ni
-                  nada).
+                  Si está apagado, no se envía nada.
                 </p>
               </div>
 
@@ -396,10 +490,6 @@ export default function SettingsPage() {
                 placeholder="noreply@tu-dominio.com"
                 disabled={!cfg.emailEnabled}
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Debe coincidir con un remitente autorizado por su proveedor de
-                correo.
-              </p>
             </div>
 
             <Button
@@ -418,7 +508,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Ventas */}
-        <Card className="p-6 lg:col-span-2">
+        <Card className="p-6">
           <div className="flex items-center space-x-3 mb-4">
             <div className="bg-slate-100 rounded-lg p-2">
               <SettingsIcon className="h-5 w-5 text-slate-700" />
@@ -426,14 +516,14 @@ export default function SettingsPage() {
             <h2 className="text-lg font-semibold">Estado de Ventas</h2>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex flex-col gap-4">
             <div>
               <div className="font-medium">
                 {cfg.salesEnabled ? "Ventas activas" : "Ventas pausadas"}
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 mt-1">
                 Cuando las ventas están pausadas, el público no podrá realizar
-                compras, pero el panel administrativo seguirá disponible.
+                compras.
               </p>
             </div>
 

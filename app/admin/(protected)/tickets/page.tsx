@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import * as XLSX from "xlsx";
 import {
   Search,
   Filter,
@@ -89,6 +90,30 @@ export default function TicketsPage() {
     setFilteredTickets(filtered);
   };
 
+  const exportExcel = async () => {
+    const XLSX = await import("xlsx");
+
+    const data = filteredTickets.map((t) => ({
+      Código: t.code,
+      Orden: t.orderNumber,
+      Comprador: t.buyerName,
+      Email: t.buyerEmail,
+      DNI: t.buyerDNI,
+      "Fecha compra": new Date(t.purchaseDate).toLocaleString("es-AR"),
+      "Estado pago": t.paymentStatus,
+      Validada: t.validated ? "SI" : "NO",
+      "Validada el": t.validatedAt
+        ? new Date(t.validatedAt).toLocaleString("es-AR")
+        : "",
+      "Validada por": t.validatedBy?.name ?? "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Tickets");
+    XLSX.writeFile(wb, `tickets_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   const getStatusBadge = (ticket: Ticket) => {
     if (ticket.validated) {
       return (
@@ -134,7 +159,10 @@ export default function TicketsPage() {
             Gestiona todas las entradas del evento
           </p>
         </div>
-        <Button className="bg-purple-600 hover:bg-purple-700">
+        <Button
+          className="bg-purple-600 hover:bg-purple-700"
+          onClick={exportExcel}
+        >
           <Download className="mr-2 h-4 w-4" />
           Exportar
         </Button>

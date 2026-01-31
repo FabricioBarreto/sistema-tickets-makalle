@@ -1,172 +1,112 @@
+// lib/mercadopago.ts
 import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
 
-type CreatePreferenceArgs = {
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN!,
+});
+
+interface CreatePreferenceParams {
   orderId: string;
   orderNumber: string;
-  buyerEmail: string;
-  buyerName: string;
   quantity: number;
   unitPrice: number;
-};
-
-function getBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.BASE_URL ||
-    "http://localhost:3000"
-  );
+  totalAmount: number;
+  buyerEmail: string;
+  buyerName: string;
+  buyerPhone?: string;
+  buyerDni?: string;
+  successUrl: string;
+  failureUrl: string;
+  pendingUrl: string;
+  notificationUrl: string;
 }
 
-export async function createPaymentPreference(args: CreatePreferenceArgs) {
-  try {
-    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+export async function createPreference(params: CreatePreferenceParams) {
+  const preference = new Preference(client);
 
-    if (!accessToken) {
-      return {
-        success: false,
-        error: "MERCADOPAGO_ACCESS_TOKEN no configurado",
-      };
-    }
-
-    const baseUrl = getBaseUrl();
-
-    const client = new MercadoPagoConfig({ accessToken });
-    const preference = new Preference(client);
-
-    const body = {
-      items: [
-        {
-          id: args.orderId,
-          title: `Entradas - ${args.orderNumber}`,
-          quantity: args.quantity,
-          unit_price: args.unitPrice,
-          currency_id: "ARS",
+  const body = {
+    items: [
+      {
+        id: params.orderId,
+        title: `Entrada Carnaval Makallé - Orden ${params.orderNumber}`,
+        description: `${params.quantity} entrada(s) para Carnavales Makallé`,
+        quantity: params.quantity,
+        unit_price: params.unitPrice,
+        currency_id: "ARS",
+      },
+    ],
+    payer: {
+      name: params.buyerName,
+      email: params.buyerEmail,
+      ...(params.buyerPhone && {
+        phone: {
+          number: params.buyerPhone,
         },
-      ],
-      payer: {
-        name: args.buyerName,
-        email: args.buyerEmail,
-      },
-      external_reference: args.orderId,
-      back_urls: {
-        success: `${baseUrl}/checkout/success?orderId=${args.orderId}`,
-        failure: `${baseUrl}/checkout/failure?orderId=${args.orderId}`,
-        pending: `${baseUrl}/checkout/pending?orderId=${args.orderId}`,
-      },
-      notification_url: `${baseUrl}/api/mercadopago/webhook`,
-    };
+      }),
+      ...(params.buyerDni && {
+        identification: {
+          type: "DNI",
+          number: params.buyerDni,
+        },
+      }),
+    },
+    back_urls: {
+      success: params.successUrl,
+      failure: params.failureUrl,
+      pending: params.pendingUrl,
+    },
+    notification_url: params.notificationUrl,
+    external_reference: params.orderId,
+    statement_descriptor: "CARNAVAL MAKALLE",
+  };
 
-    const result = await preference.create({ body });
-
-    return {
-      success: true,
-      preferenceId: result.id,
-      initPoint: result.init_point,
-      sandboxInitPoint: result.sandbox_init_point,
-    };
-  } catch (e: unknown) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    const errorObject = e instanceof Error ? (e as unknown as Record<string, unknown>) : {};
-    return {
-      success: false,
-      error: error.message || "Error Mercado Pago",
-      details: {
-        message: error.message,
-        error: 'error' in errorObject ? errorObject.error : undefined,
-        status: 'status' in errorObject ? errorObject.status : undefined,
-        cause: e instanceof Error ? error.cause : undefined,
-      },
-    };
-  }
+  return await preference.create({ body });
 }
 
-/**
- * Obtiene información de un pago desde MercadoPago
- */
-export async function getPaymentStatus(paymentId: string | number) {
+export async function getPaymentStatus(
+  paymentId: string,
+): Promise<{ success: boolean; payment?: any; error?: string }> {
   try {
-    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
-
-    if (!accessToken) {
-      return {
-        success: false,
-        error: "MERCADOPAGO_ACCESS_TOKEN no configurado",
-      };
-    }
-
-    const client = new MercadoPagoConfig({ accessToken });
     const payment = new Payment(client);
-
-    const result = await payment.get({ id: String(paymentId) });
-
-    return {
-      success: true,
-      payment: {
-        id: result.id,
-        status: result.status,
-        statusDetail: result.status_detail,
-        externalReference: result.external_reference,
-        transactionAmount: result.transaction_amount,
-        dateApproved: result.date_approved,
-        dateCreated: result.date_created,
-        payer: {
-          email: result.payer?.email,
-          firstName: result.payer?.first_name,
-          lastName: result.payer?.last_name,
-        },
-      },
-    };
-  } catch (error: unknown) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error("Error getting payment status:", error);
-    return {
-      success: false,
-      error: err.message || "Error al obtener información del pago",
-    };
+    const result = await payment.get({ id: paymentId });
+    return { success: true, payment: result };
+  } catch (error: any) {
+    console.error("Error fetching payment:", error);
+    return { success: false, error: error.message };
   }
 }
 
-/**
- * Mapea estados de MercadoPago a estados internos
- */
 export function mapMPStatusToInternal(
-  mpStatus: string | null | undefined,
-): "PENDING_PAYMENT" | "PAID" | "CANCELLED" | "REFUNDED" {
+  mpStatus: string,
+): "PENDING" | "VALID" | "USED" | "CANCELLED" {
   switch (mpStatus) {
     case "approved":
-      return "PAID";
+      return "VALID";
+    case "pending":
+    case "in_process":
+      return "PENDING";
     case "rejected":
     case "cancelled":
       return "CANCELLED";
-    case "refunded":
-    case "charged_back":
-      return "REFUNDED";
-    case "in_process":
-    case "in_mediation":
-    case "pending":
     default:
-      return "PENDING_PAYMENT";
+      return "PENDING";
   }
 }
 
-/**
- * Mapea estados de MercadoPago a estados de orden (PaymentStatus)
- */
 export function mapMPStatusToPaymentStatus(
-  mpStatus: string | null | undefined,
+  mpStatus: string,
 ): "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED" {
   switch (mpStatus) {
     case "approved":
       return "COMPLETED";
+    case "pending":
+    case "in_process":
+      return "PENDING";
     case "rejected":
     case "cancelled":
       return "FAILED";
     case "refunded":
-    case "charged_back":
       return "REFUNDED";
-    case "in_process":
-    case "in_mediation":
-    case "pending":
     default:
       return "PENDING";
   }

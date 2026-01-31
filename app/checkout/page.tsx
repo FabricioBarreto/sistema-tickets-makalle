@@ -147,7 +147,7 @@ function CheckoutContent() {
       }
 
       // 3) Redirigir a Mercado Pago
-      window.location.href = mpData.data.initPoint;
+      window.location.href = mpData.initPoint;
     } catch (error: unknown) {
       console.error("Error:", error);
       if (error instanceof Error) {

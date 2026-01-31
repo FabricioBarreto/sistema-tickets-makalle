@@ -45,9 +45,7 @@ export async function POST(req: NextRequest) {
         },
         validations: {
           include: {
-            user: {
-              select: { name: true },
-            },
+            user: { select: { name: true } },
           },
           orderBy: { timestamp: "desc" },
           take: 1,
@@ -62,7 +60,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ Verificar si ya fue validada (sin campo validated)
+    // ✅ Verificar si ya fue validada
     const alreadyValidated =
       ticket.status === "VALIDATED" || !!ticket.validatedAt;
 
@@ -98,45 +96,48 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ Validar la entrada (sin validated)
-    const updatedTicket = await prisma.ticket.update({
-      where: { id: ticket.id },
-      data: {
-        validatedAt: new Date(),
-        status: "VALIDATED",
-      },
-      include: {
-        order: {
-          select: {
-            orderNumber: true,
-            buyerName: true,
-            buyerEmail: true,
-            buyerPhone: true,
-            buyerDNI: true,
-            unitPrice: true,
-            quantity: true,
+    // ✅ TRANSACCIÓN: update ticket + create validation (todo o nada)
+    const { updatedTicket, validation } = await prisma.$transaction(
+      async (tx) => {
+        const updatedTicket = await tx.ticket.update({
+          where: { id: ticket.id },
+          data: {
+            validatedAt: new Date(),
+            status: "VALIDATED",
           },
-        },
-      },
-    });
+          include: {
+            order: {
+              select: {
+                orderNumber: true,
+                buyerName: true,
+                buyerEmail: true,
+                buyerPhone: true,
+                buyerDNI: true,
+                unitPrice: true,
+                quantity: true,
+              },
+            },
+          },
+        });
 
-    // Registrar la validación
-    const validation = await prisma.validation.create({
-      data: {
-        ticketId: updatedTicket.id,
-        userId: session.user.id,
-        ipAddress:
-          req.headers.get("x-forwarded-for") ||
-          req.headers.get("x-real-ip") ||
-          "unknown",
-        userAgent: req.headers.get("user-agent") || "unknown",
+        const validation = await tx.validation.create({
+          data: {
+            ticketId: updatedTicket.id,
+            userId: session.user.id,
+            ipAddress:
+              req.headers.get("x-forwarded-for") ||
+              req.headers.get("x-real-ip") ||
+              "unknown",
+            userAgent: req.headers.get("user-agent") || "unknown",
+          },
+          include: {
+            user: { select: { name: true } },
+          },
+        });
+
+        return { updatedTicket, validation };
       },
-      include: {
-        user: {
-          select: { name: true },
-        },
-      },
-    });
+    );
 
     return NextResponse.json({
       success: true,
@@ -148,7 +149,7 @@ export async function POST(req: NextRequest) {
         buyerEmail: updatedTicket.order.buyerEmail,
         buyerDNI: updatedTicket.order.buyerDNI,
         quantity: updatedTicket.order.quantity,
-        validated: true, // ✅ lo devolvemos para tu UI
+        validated: true,
         validatedAt: updatedTicket.validatedAt,
         validatedBy: validation.user,
       },

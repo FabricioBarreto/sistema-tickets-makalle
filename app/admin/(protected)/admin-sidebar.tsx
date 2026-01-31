@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Ticket,
-  CheckSquare,
   Users,
   Settings,
   FileText,
@@ -18,7 +17,6 @@ import { Button } from "@/components/ui/button";
 const navigation = [
   { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { name: "Entradas", href: "/admin/tickets", icon: Ticket },
-  { name: "Validar", href: "/admin/validate", icon: CheckSquare },
   { name: "Reportes", href: "/admin/reports", icon: FileText },
   { name: "Usuarios", href: "/admin/users", icon: Users },
   { name: "Configuración", href: "/admin/settings", icon: Settings },
@@ -54,7 +52,7 @@ export default function AdminSidebar() {
       {/* Sidebar */}
       <aside
         className={`
-          fixed top-0 left-0 z-40 h-screen w-64 bg-white border-r border-gray-200 
+          fixed top-0 left-0 z-40 h-screen w-64 bg-white border-r border-gray-200
           transform transition-transform duration-300 ease-in-out
           ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
@@ -71,7 +69,7 @@ export default function AdminSidebar() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Carnaval</h1>
-                <p className="text-xs text-gray-500">Sistema de Entradas</p>
+                <p className="text-xs text-gray-500">Panel de Administración</p>
               </div>
             </Link>
           </div>
@@ -111,7 +109,7 @@ export default function AdminSidebar() {
           <div className="p-4 border-t border-gray-200">
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-4">
               <p className="text-xs font-semibold text-gray-900 mb-1">
-                Sistema de Entradas
+                Panel de Administración
               </p>
               <p className="text-xs text-gray-600">Carnaval Makalle 2026</p>
             </div>

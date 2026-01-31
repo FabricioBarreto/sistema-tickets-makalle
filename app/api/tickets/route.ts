@@ -2,13 +2,65 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateQRHash, generateReadableCode } from "@/lib/crypto";
 
+// GET - Listar tickets (admin)
+export async function GET() {
+  try {
+    const tickets = await prisma.ticket.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        order: true,
+        validations: {
+          orderBy: { timestamp: "desc" },
+          take: 1,
+          include: {
+            user: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    const formatted = tickets.map((t) => {
+      const lastValidation = t.validations[0] ?? null;
+
+      const validated = t.status === "VALIDATED" || !!t.validatedAt;
+
+      return {
+        id: t.id,
+        code: t.code,
+        orderNumber: t.order.orderNumber,
+        buyerName: t.order.buyerName,
+        buyerEmail: t.order.buyerEmail,
+        buyerDNI: t.order.buyerDNI ?? "",
+        quantity: t.order.quantity,
+        price: t.order.unitPrice.toString(),
+        validated,
+        validatedAt: t.validatedAt?.toISOString?.() ?? null,
+        purchaseDate: t.order.purchaseDate.toISOString(),
+        paymentStatus: t.order.paymentStatus,
+        validatedBy: lastValidation
+          ? { name: lastValidation.user.name }
+          : validated
+            ? { name: "Desconocido" }
+            : null,
+      };
+    });
+
+    return NextResponse.json({ success: true, tickets: formatted });
+  } catch (error) {
+    console.error("GET /api/tickets error:", error);
+    return NextResponse.json(
+      { success: false, error: "Error al obtener tickets" },
+      { status: 500 },
+    );
+  }
+}
+
 // POST - Crear nueva orden con tickets
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { buyerName, buyerEmail, buyerPhone, buyerDNI, quantity } = body;
 
-    // Validaciones básicas (buyerPhone y buyerDNI ahora pueden ser opcionales)
     if (!buyerName || !buyerEmail || !quantity) {
       return NextResponse.json(
         { success: false, error: "Faltan datos requeridos" },
@@ -23,7 +75,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Normalizar opcionales a string|null (para Prisma)
     const normalizedPhone =
       typeof buyerPhone === "string" && buyerPhone.trim().length > 0
         ? buyerPhone.trim()
@@ -34,7 +85,6 @@ export async function POST(req: NextRequest) {
         ? buyerDNI.trim()
         : null;
 
-    // Obtener configuración
     const config = await prisma.systemConfig.findFirst();
     if (!config) {
       return NextResponse.json(
@@ -50,7 +100,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verificar disponibilidad
     const soldCount = await prisma.ticket.count({
       where: { status: { in: ["PAID", "VALIDATED"] } },
     });
@@ -66,7 +115,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Generar número de orden único
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 8).toUpperCase();
     const orderNumber = `ORD-${timestamp}-${random}`;
@@ -74,14 +122,13 @@ export async function POST(req: NextRequest) {
     const unitPrice = Number(config.ticketPrice);
     const totalAmount = unitPrice * quantity;
 
-    // Crear orden
     const order = await prisma.order.create({
       data: {
         orderNumber,
         buyerName,
         buyerEmail,
-        buyerPhone: normalizedPhone, // ✅ ahora puede ser null
-        buyerDNI: normalizedDni, // ✅ ahora puede ser null
+        buyerPhone: normalizedPhone,
+        buyerDNI: normalizedDni,
         unitPrice,
         quantity,
         totalAmount,
@@ -90,7 +137,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Crear tickets individuales
     const tickets = [];
     for (let i = 0; i < quantity; i++) {
       const code = generateReadableCode(orderNumber, i);
@@ -102,8 +148,6 @@ export async function POST(req: NextRequest) {
           code,
           qrHash,
           status: "PENDING_PAYMENT",
-          // ✅ validated: false (ELIMINADO)
-          // validatedAt queda null por default
         },
       });
 

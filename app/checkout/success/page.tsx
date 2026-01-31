@@ -9,6 +9,7 @@ import {
   Home,
   Loader2,
   Clock,
+  FileText,
 } from "lucide-react";
 
 interface Order {
@@ -16,24 +17,19 @@ interface Order {
   quantity: number;
   buyerName: string;
   buyerEmail: string;
-  buyerPhone?: string; // 👈 nuevo (si no existe, no se muestra WhatsApp)
+  buyerPhone?: string;
   totalAmount: number;
   paymentStatus: string;
+  downloadToken?: string; // 👈 TOKEN DE DESCARGA
 }
 
-// Helpers WhatsApp (gratis = wa.me + mensaje prellenado)
+// Helpers WhatsApp
 function normalizePhoneForWhatsApp(phone: string): string {
   let digits = (phone || "").replace(/\D/g, "");
-
   if (digits.startsWith("00")) digits = digits.slice(2);
   if (!digits.startsWith("54")) digits = "54" + digits;
-
-  // 011... => 54011... (arreglo)
   digits = digits.replace(/^540/, "54");
-
-  // 54 + area + 15 + numero => sacamos el 15
   digits = digits.replace(/^54(\d{2,4})15/, "54$1");
-
   return digits;
 }
 
@@ -48,16 +44,13 @@ function SuccessContent() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [paymentStatus, setPaymentStatus] = useState<string>("PENDING");
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null); // 👈 URL DE DESCARGA
 
   useEffect(() => {
     if (orderId) {
       fetchOrder();
-      // Iniciar polling cada 3 segundos
       const interval = setInterval(fetchOrder, 3000);
-
-      // Limpiar después de 2 minutos
       const timeout = setTimeout(() => clearInterval(interval), 120000);
-
       return () => {
         clearInterval(interval);
         clearTimeout(timeout);
@@ -74,7 +67,15 @@ function SuccessContent() {
         setOrder(data.data);
         setPaymentStatus(data.data.paymentStatus);
 
-        // Si el pago está completado, dejar de hacer polling
+        // 👇 GENERAR URL DE DESCARGA
+        if (
+          data.data.downloadToken &&
+          data.data.paymentStatus === "COMPLETED"
+        ) {
+          // Usar ruta relativa (funciona en dev y producción)
+          setDownloadUrl(`/api/tickets/download/${data.data.downloadToken}`);
+        }
+
         if (data.data.paymentStatus === "COMPLETED") {
           setLoading(false);
         }
@@ -100,7 +101,6 @@ function SuccessContent() {
     );
   }
 
-  // Si el pago aún está pendiente después de cargar
   if (paymentStatus === "PENDING") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-orange-50 flex items-center justify-center p-4">
@@ -206,6 +206,25 @@ Si no te llegó, avisame por acá y te lo reenvío.`
             </div>
           )}
 
+          {/* 👇 BOTÓN DE DESCARGA DEL PDF */}
+          {downloadUrl && (
+            <div className="mb-6">
+              <a
+                href={downloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3"
+              >
+                <FileText className="w-6 h-6" />
+                Descargar Entradas (PDF)
+                <Download className="w-6 h-6" />
+              </a>
+              <p className="text-xs text-gray-500 mt-2">
+                Descargá tus entradas ahora o guardá este link para después
+              </p>
+            </div>
+          )}
+
           {/* Email Info */}
           <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 mb-8">
             <div className="flex items-center justify-center gap-3 mb-3">
@@ -213,7 +232,7 @@ Si no te llegó, avisame por acá y te lo reenvío.`
               <h3 className="font-bold text-blue-900">Revisa tu email</h3>
             </div>
             <p className="text-sm text-blue-800">
-              Te enviamos tus entradas con código QR a{" "}
+              También te enviamos tus entradas con código QR a{" "}
               <span className="font-semibold">{order?.buyerEmail}</span>
             </p>
             <p className="text-xs text-blue-600 mt-2">
@@ -223,21 +242,15 @@ Si no te llegó, avisame por acá y te lo reenvío.`
 
           {/* Actions */}
           <div className="space-y-3">
-            {waLink ? (
+            {waLink && (
               <a
                 href={waLink}
                 target="_blank"
                 rel="noreferrer"
                 className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
               >
-                <Download className="w-5 h-5" />
-                Abrir WhatsApp con mis datos
+                💬 Abrir WhatsApp con mis datos
               </a>
-            ) : (
-              <div className="text-sm text-gray-500">
-                Si cargaste tu teléfono en la compra, acá te aparece el botón de
-                WhatsApp.
-              </div>
             )}
 
             <button
@@ -251,7 +264,7 @@ Si no te llegó, avisame por acá y te lo reenvío.`
 
           {/* Help Text */}
           <p className="text-sm text-gray-500 mt-6">
-            ¿Problemas? Contactanos a soporte@carnaval.com
+            ¿Problemas? Contactanos a fabriciobarreto2610@gmail.com
           </p>
         </div>
       </div>

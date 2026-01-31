@@ -1,3 +1,5 @@
+// prisma/schema.prisma (ACTUALIZADO COMPLETO)
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -28,8 +30,8 @@ model Order {
   orderNumber       String        @unique
   buyerName         String
   buyerEmail        String
-  buyerPhone        String?       // 👈 opcional
-  buyerDNI          String?       // 👈 opcional
+  buyerPhone        String?
+  buyerDNI          String?
   unitPrice         Decimal       @db.Decimal(10, 2)
   quantity          Int
   totalAmount       Decimal       @db.Decimal(10, 2)
@@ -38,23 +40,28 @@ model Order {
   mercadoPagoStatus String?
   status            OrderStatus   @default(ACTIVE)
   purchaseDate      DateTime      @default(now())
+  
+  // 👇 NUEVO: Token único para descarga segura del PDF
+  downloadToken     String?       @unique
+  
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   tickets           Ticket[]
 
   @@index([buyerEmail])
-  @@index([buyerPhone])           // 👈 nuevo
+  @@index([buyerPhone])
   @@index([buyerDNI])
   @@index([orderNumber])
   @@index([mercadoPagoId])
   @@index([paymentStatus])
+  @@index([downloadToken])  // 👈 Índice para búsquedas rápidas
 }
 
 model Ticket {
   id          String       @id @default(cuid())
   code        String       @unique
   qrHash      String       @unique
-  status      TicketStatus @default(PENDING_PAYMENT) // 👈 mejor default
+  status      TicketStatus @default(PENDING_PAYMENT)
   validatedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -71,25 +78,17 @@ model Ticket {
 model SystemConfig {
   id             String   @id @default(cuid())
   
-  // Configuración de entradas
   ticketPrice    Decimal  @db.Decimal(10, 2)
   totalAvailable Int
   maxPerPurchase Int      @default(10)
   salesEnabled   Boolean  @default(true)
   
-  // Información del evento
   eventDate      DateTime
   eventName      String
   eventLocation  String?
   
-  // Email (mantener en DB porque no son sensibles)
   emailFrom      String?
   emailEnabled   Boolean  @default(true)
-  
-  // ❌ REMOVIDO: mpAccessToken y mpPublicKey
-  // Ahora están en .env como:
-  // MERCADOPAGO_ACCESS_TOKEN
-  // MERCADOPAGO_PUBLIC_KEY
   
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

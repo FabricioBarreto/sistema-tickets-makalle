@@ -1,3 +1,4 @@
+// lib/email.ts
 import { Resend } from "resend";
 import { generateQRImage } from "./qr";
 import { generateTicketsPdf } from "./pdf";
@@ -21,27 +22,53 @@ interface SendTicketEmailData {
   eventName: string;
   eventDate: string;
   eventLocation: string;
+  downloadUrl?: string; // 👈 LINK DE DESCARGA
 }
 
 function getEmailHTML(data: SendTicketEmailData): string {
   return `
   <html>
     <body style="font-family:Arial;background:#f9fafb;padding:24px">
-      <h2>🎭 ¡Tu compra fue exitosa!</h2>
+      <h2 style="color:#8b5cf6">🎭 ¡Tu compra fue exitosa!</h2>
       <p>Hola <strong>${data.buyerName}</strong>,</p>
       <p>
         Te adjuntamos tus entradas en <strong>PDF</strong> para ${data.eventName}.
-        <br/>Tip: usá el PDF para ingresar (QR grande, 0 problemas).
+        <br/>Presentá el PDF en la entrada (QR grande, escaneo rápido).
       </p>
-      <ul>
-        <li><strong>Orden:</strong> ${data.orderNumber}</li>
-        <li><strong>Entradas:</strong> ${data.tickets.length}</li>
-        <li><strong>Evento:</strong> ${data.eventName}</li>
-        <li><strong>Fecha:</strong> ${data.eventDate}</li>
-        <li><strong>Lugar:</strong> ${data.eventLocation}</li>
-      </ul>
+      <div style="background:#fff;padding:20px;border-radius:8px;margin:20px 0;border:1px solid #e5e7eb">
+        <ul style="list-style:none;padding:0;margin:0">
+          <li style="margin:8px 0"><strong>🎫 Orden:</strong> ${data.orderNumber}</li>
+          <li style="margin:8px 0"><strong>📝 Entradas:</strong> ${data.tickets.length}</li>
+          <li style="margin:8px 0"><strong>🎉 Evento:</strong> ${data.eventName}</li>
+          <li style="margin:8px 0"><strong>📅 Fecha:</strong> ${data.eventDate}</li>
+          <li style="margin:8px 0"><strong>📍 Lugar:</strong> ${data.eventLocation}</li>
+        </ul>
+      </div>
+      ${
+        data.downloadUrl
+          ? `
+      <div style="background:#fef3c7;padding:15px;border-radius:8px;margin:20px 0;border:1px solid #fbbf24">
+        <p style="margin:0 0 10px 0"><strong>💡 Consejo:</strong> También podés descargar tus entradas en cualquier momento desde este link:</p>
+        <p style="margin:10px 0">
+          <a href="${data.downloadUrl}" style="display:inline-block;background:#8b5cf6;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold">
+            📥 Descargar Entradas
+          </a>
+        </p>
+        <p style="margin:10px 0 0 0;font-size:11px;color:#666">
+          ${data.downloadUrl}
+        </p>
+        <p style="margin:10px 0 0 0;font-size:11px;color:#666">
+          (Guardá este link por si necesitás descargar las entradas nuevamente)
+        </p>
+      </div>
+      `
+          : ""
+      }
       <p style="font-size:12px;color:#666;margin-top:20px">
-        Si necesitás soporte: soporte@carnaval.com
+        Si tenés alguna consulta, escribinos a: <strong>fabriciobarreto2610@gmail.com</strong>
+      </p>
+      <p style="font-size:11px;color:#999;margin-top:30px">
+        Este email contiene tus entradas oficiales. No lo compartas.
       </p>
     </body>
   </html>
@@ -63,7 +90,7 @@ export async function sendTicketEmailWithQRs(
       return { success: false, error: "RESEND_API_KEY no configurada" };
     }
 
-    // 1) Generar QRs (solo para armar el PDF)
+    // 1) Generar QRs
     const qrDataUrls = await Promise.all(
       data.tickets.map((t) =>
         generateQRImage(t.qrCode, {
@@ -85,17 +112,15 @@ export async function sendTicketEmailWithQRs(
       qrDataUrls,
     });
 
-    // Logs de tamaño (IMPORTANTÍSIMO)
     const pdfBytes = pdfBuffer.byteLength;
     console.log(
-      "[tickets] pdf size bytes:",
+      "[tickets] PDF size:",
       pdfBytes,
-      "≈",
+      "bytes ≈",
       (pdfBytes / (1024 * 1024)).toFixed(2),
       "MB",
     );
 
-    // Si querés ser más estricto:
     if (pdfBytes > 35 * 1024 * 1024) {
       console.error("[tickets] PDF too large, aborting");
       return {
@@ -104,7 +129,7 @@ export async function sendTicketEmailWithQRs(
       };
     }
 
-    // 3) HTML liviano
+    // 3) Generar HTML
     const html = getEmailHTML(data);
 
     // 4) Enviar
@@ -114,7 +139,7 @@ export async function sendTicketEmailWithQRs(
       to: data.to,
       subject: `🎉 Tus entradas para ${data.eventName} – Orden ${data.orderNumber}`,
       html,
-      replyTo: "soporte@carnaval.com",
+      replyTo: "fabriciobarreto2610@gmail.com",
       attachments: [
         {
           filename: `Entradas-${data.orderNumber}.pdf`,
@@ -128,10 +153,13 @@ export async function sendTicketEmailWithQRs(
       return { success: false, error: error.message || "Resend error" };
     }
 
-    console.log("[tickets] Email sent OK:", sent);
+    console.log("[tickets] Email sent OK:", sent?.id);
     return { success: true, messageId: sent?.id };
   } catch (err: unknown) {
     console.error("[tickets] Unexpected error:", err);
-    return { success: false, error: err instanceof Error ? err.message : "Error enviando email" };
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Error enviando email",
+    };
   }
 }
