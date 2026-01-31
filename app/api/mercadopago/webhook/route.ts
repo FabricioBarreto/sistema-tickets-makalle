@@ -170,8 +170,17 @@ export async function POST(request: NextRequest) {
               "⚠️  WhatsApp: Template not configured (waiting for Meta approval), skipping",
             );
           } else {
+            // 👇 NORMALIZAR TELÉFONO
+            let normalizedPhone = order.buyerPhone.replace(/[^0-9+]/g, "");
+            if (!normalizedPhone.startsWith("+")) {
+              normalizedPhone = "+54" + normalizedPhone;
+            }
+            console.log(
+              `📱 Normalized phone: ${order.buyerPhone} → ${normalizedPhone}`,
+            );
+
             const whatsappResult = await sendTicketWhatsAppTwilio({
-              to: order.buyerPhone,
+              to: normalizedPhone, // 👈 Usar teléfono normalizado
               buyerName: order.buyerName,
               eventName,
               eventDate,
@@ -184,23 +193,17 @@ export async function POST(request: NextRequest) {
             if (whatsappResult.success) {
               whatsappSent = true;
               console.log(
-                `✅ WhatsApp sent successfully to ${order.buyerPhone}`,
+                `✅ WhatsApp sent successfully to ${normalizedPhone}`,
               );
               console.log(`📱 Message SID: ${whatsappResult.messageId}`);
             } else {
               console.log(
-                `⚠️  WhatsApp failed to ${order.buyerPhone}: ${whatsappResult.error}`,
-              );
-              console.log(
-                "ℹ️  (Template may be pending Meta approval - this is expected)",
+                `⚠️  WhatsApp failed to ${normalizedPhone}: ${whatsappResult.error}`,
               );
             }
           }
         } catch (err: unknown) {
           console.log("⚠️  WhatsApp exception (not critical)", err);
-          console.log(
-            "ℹ️  (This is normal if Meta hasn't approved the template yet)",
-          );
         }
       } else {
         console.log("ℹ️  No phone number provided, skipping WhatsApp");
