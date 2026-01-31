@@ -65,14 +65,17 @@ export async function createPreference(params: CreatePreferenceParams) {
 
 export async function getPaymentStatus(
   paymentId: string,
-): Promise<{ success: boolean; payment?: any; error?: string }> {
+): Promise<{ success: boolean; payment?: unknown; error?: string }> {
   try {
     const payment = new Payment(client);
     const result = await payment.get({ id: paymentId });
     return { success: true, payment: result };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching payment:", error);
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
   }
 }
 
