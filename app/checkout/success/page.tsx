@@ -240,31 +240,10 @@ Si no te llegó, avisame por acá y te lo reenvío.`
             </p>
           </div>
 
-          {/* Actions */}
-          <div className="space-y-3">
-            {waLink && (
-              <a
-                href={waLink}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
-              >
-                💬 Abrir WhatsApp con mis datos
-              </a>
-            )}
-
-            <button
-              onClick={() => router.push("/")}
-              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
-            >
-              <Home className="w-5 h-5" />
-              Volver al inicio
-            </button>
-          </div>
-
           {/* Help Text */}
           <p className="text-sm text-gray-500 mt-6">
-            ¿Problemas? Contactanos a fabriciobarreto2610@gmail.com
+            ¿Problemas? Contactanos a fabriciobarreto2610@gmail.com o al
+            teléfono 3734-469110
           </p>
         </div>
       </div>
