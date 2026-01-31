@@ -3,6 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPreference } from "@/lib/mercadopago";
 
+/**
+ * Normaliza una URL removiendo barras finales
+ */
+function normalizeUrl(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { orderId } = await request.json();
@@ -28,12 +35,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    // 👇 NORMALIZAR URL (remover barras finales)
+    const appUrl = normalizeUrl(
+      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    );
     const isLocal = appUrl.includes("localhost");
 
     const successUrl = `${appUrl}/checkout/success?orderId=${orderId}`;
     const failureUrl = `${appUrl}/checkout/failure?orderId=${orderId}`;
     const pendingUrl = `${appUrl}/checkout/pending?orderId=${orderId}`;
+    const notificationUrl = `${appUrl}/api/mercadopago/webhook`;
 
     console.log("🚀 Creando preferencia MP:", {
       orderId,
@@ -44,9 +55,9 @@ export async function POST(request: NextRequest) {
         failure: failureUrl,
         pending: pendingUrl,
       },
-      notification_url: `${appUrl}/api/mercadopago/webhook`,
+      notification_url: notificationUrl,
       hasPhone: !!order.buyerPhone,
-      hasDni: !!order.buyerDNI, // ⭐ CAMBIO: buyerDNI en mayúsculas
+      hasDni: !!order.buyerDNI,
     });
 
     const preference = await createPreference({
@@ -58,11 +69,11 @@ export async function POST(request: NextRequest) {
       buyerEmail: order.buyerEmail,
       buyerName: order.buyerName,
       buyerPhone: order.buyerPhone || undefined,
-      buyerDni: order.buyerDNI || undefined, // ⭐ CAMBIO: buyerDNI en mayúsculas
+      buyerDni: order.buyerDNI || undefined,
       successUrl,
       failureUrl,
       pendingUrl,
-      notificationUrl: `${appUrl}/api/mercadopago/webhook`,
+      notificationUrl,
     });
 
     console.log("✅ Preferencia MP creada:", preference.id);
