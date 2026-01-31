@@ -21,7 +21,7 @@ interface Ticket {
   orderNumber: string;
   buyerName: string;
   buyerEmail: string;
-  buyerDNI: string;
+  buyerDNI: string; // ✅ Puede estar vacío
   quantity: number;
   price: string;
   validated: boolean;
@@ -81,7 +81,7 @@ export default function TicketsPage() {
         (t) =>
           t.buyerName.toLowerCase().includes(term) ||
           t.buyerEmail.toLowerCase().includes(term) ||
-          t.buyerDNI.includes(term) ||
+          t.buyerDNI.includes(term) || // ✅ Busca en DNI aunque puede estar vacío
           t.orderNumber.toLowerCase().includes(term) ||
           t.code.toLowerCase().includes(term),
       );
@@ -98,7 +98,7 @@ export default function TicketsPage() {
       Orden: t.orderNumber,
       Comprador: t.buyerName,
       Email: t.buyerEmail,
-      DNI: t.buyerDNI,
+      DNI: t.buyerDNI || "N/A", // ✅ Muestra N/A si está vacío
       "Fecha compra": new Date(t.purchaseDate).toLocaleString("es-AR"),
       "Estado pago": t.paymentStatus,
       Validada: t.validated ? "SI" : "NO",
@@ -285,7 +285,9 @@ export default function TicketsPage() {
                     <p className="text-xs text-gray-500">{ticket.buyerEmail}</p>
                   </td>
                   <td className="px-4 py-4 text-sm text-gray-900">
-                    {ticket.buyerDNI}
+                    {ticket.buyerDNI || (
+                      <span className="text-gray-400">N/A</span>
+                    )}
                   </td>
                   <td className="px-4 py-4 text-sm text-gray-900">
                     {new Date(ticket.purchaseDate).toLocaleDateString("es-AR")}

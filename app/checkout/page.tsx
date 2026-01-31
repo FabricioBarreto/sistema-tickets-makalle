@@ -1,15 +1,10 @@
-// app/checkout/page.tsx
+// app/checkout/page.tsx (SIN DNI)
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
-import {
-  formatCurrency,
-  isValidEmail,
-  isValidPhone,
-  isValidDNI,
-} from "@/lib/utils";
+import { ArrowLeft, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
+import { formatCurrency, isValidEmail, isValidPhone } from "@/lib/utils";
 import { toast } from "sonner";
 
 function CheckoutContent() {
@@ -24,7 +19,6 @@ function CheckoutContent() {
     buyerName: "",
     buyerEmail: "",
     buyerPhone: "",
-    buyerDNI: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -80,10 +74,6 @@ function CheckoutContent() {
 
     if (!isValidPhone(formData.buyerPhone)) {
       newErrors.buyerPhone = "Teléfono inválido (ej: +54 9 362 123-4567)";
-    }
-
-    if (!isValidDNI(formData.buyerDNI)) {
-      newErrors.buyerDNI = "DNI inválido (7 u 8 dígitos)";
     }
 
     setErrors(newErrors);
@@ -292,29 +282,6 @@ function CheckoutContent() {
                   )}
                 </div>
 
-                {/* DNI */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    DNI *
-                  </label>
-                  <input
-                    type="text"
-                    name="buyerDNI"
-                    value={formData.buyerDNI}
-                    onChange={handleChange}
-                    placeholder="12345678"
-                    maxLength={8}
-                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
-                      errors.buyerDNI ? "border-red-500" : "border-gray-300"
-                    }`}
-                  />
-                  {errors.buyerDNI && (
-                    <p className="mt-1 text-sm text-red-600">
-                      {errors.buyerDNI}
-                    </p>
-                  )}
-                </div>
-
                 {/* Submit Button */}
                 <button
                   type="submit"
@@ -333,6 +300,23 @@ function CheckoutContent() {
                     </>
                   )}
                 </button>
+
+                {/* ⚠️ AVISO IMPORTANTE */}
+                <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-900">
+                        Aviso importante
+                      </p>
+                      <p className="text-sm text-amber-800 mt-1">
+                        El ticket QR{" "}
+                        <strong>solo puede ser utilizado una vez</strong>. Luego
+                        será invalidado automáticamente.
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
                 <p className="text-sm text-gray-500 text-center">
                   Al continuar, serás redirigido a Mercado Pago para completar
@@ -388,6 +372,18 @@ function CheckoutContent() {
                 <p className="text-sm text-green-800">
                   Recibirás tus entradas con código QR al instante por email
                   después de confirmar el pago.
+                </p>
+              </div>
+
+              {/* ⚠️ AVISO IMPORTANTE - En el resumen (siempre visible) */}
+              <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-lg">
+                <h3 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  Aviso importante
+                </h3>
+                <p className="text-sm text-amber-800 font-medium">
+                  El ticket QR solo puede ser utilizado una vez. Luego será
+                  invalidado automáticamente.
                 </p>
               </div>
             </div>

@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
+// ✅ DNI ya no es requerido en el schema
 const bodySchema = z.object({
   buyerName: z.string().min(3),
   buyerEmail: z.string().email(),
   buyerPhone: z.string().min(6),
-  buyerDNI: z.string().min(7),
   quantity: z.number().int().min(1).max(10),
 });
 
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       buyerName: parsed.data.buyerName,
       buyerEmail: parsed.data.buyerEmail,
       buyerPhone: parsed.data.buyerPhone,
-      buyerDNI: parsed.data.buyerDNI,
+      // ✅ buyerDNI se omite
       quantity: parsed.data.quantity,
       unitPrice,
       totalAmount,

@@ -30,7 +30,7 @@ export async function GET() {
         orderNumber: t.order.orderNumber,
         buyerName: t.order.buyerName,
         buyerEmail: t.order.buyerEmail,
-        buyerDNI: t.order.buyerDNI ?? "",
+        buyerDNI: t.order.buyerDNI ?? "", // ✅ Opcional, puede ser vacío
         quantity: t.order.quantity,
         price: t.order.unitPrice.toString(),
         validated,
@@ -59,8 +59,9 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { buyerName, buyerEmail, buyerPhone, buyerDNI, quantity } = body;
+    const { buyerName, buyerEmail, buyerPhone, quantity } = body;
 
+    // ✅ DNI ya no es requerido
     if (!buyerName || !buyerEmail || !quantity) {
       return NextResponse.json(
         { success: false, error: "Faltan datos requeridos" },
@@ -78,11 +79,6 @@ export async function POST(req: NextRequest) {
     const normalizedPhone =
       typeof buyerPhone === "string" && buyerPhone.trim().length > 0
         ? buyerPhone.trim()
-        : null;
-
-    const normalizedDni =
-      typeof buyerDNI === "string" && buyerDNI.trim().length > 0
-        ? buyerDNI.trim()
         : null;
 
     const config = await prisma.systemConfig.findFirst();
@@ -128,7 +124,7 @@ export async function POST(req: NextRequest) {
         buyerName,
         buyerEmail,
         buyerPhone: normalizedPhone,
-        buyerDNI: normalizedDni,
+        // ✅ buyerDNI se omite completamente
         unitPrice,
         quantity,
         totalAmount,

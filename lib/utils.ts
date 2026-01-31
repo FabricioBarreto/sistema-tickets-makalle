@@ -39,15 +39,6 @@ export function isValidPhone(phone: string): boolean {
 }
 
 /**
- * Validar DNI argentino
- * Debe tener 7 u 8 dígitos
- */
-export function isValidDNI(dni: string): boolean {
-  const cleaned = dni.replace(/\D/g, "");
-  return cleaned.length >= 7 && cleaned.length <= 8;
-}
-
-/**
  * Formato de fecha
  */
 export function formatDate(date: Date | string): string {

@@ -88,8 +88,8 @@ export async function GET(req: NextRequest) {
         orderNumber: o.orderNumber,
         buyerName: o.buyerName,
         buyerEmail: o.buyerEmail,
-        buyerDNI: o.buyerDNI,
-        buyerPhone: o.buyerPhone,
+        buyerDNI: o.buyerDNI || "N/A", // ✅ Muestra N/A si está vacío
+        buyerPhone: o.buyerPhone || "N/A", // ✅ También puede estar vacío
         quantity: o.quantity,
         unitPrice: Number(o.unitPrice),
         totalAmount: Number(o.totalAmount),
@@ -125,13 +125,13 @@ export async function GET(req: NextRequest) {
       rows = tickets.map((t) => ({
         ticketCode: t.code,
         ticketStatus: t.status,
-        validated: t.status === "VALIDATED", // ✅ antes era t.validated
+        validated: t.status === "VALIDATED",
         validatedAt: t.validatedAt ? t.validatedAt.toISOString() : "",
         orderNumber: t.order.orderNumber,
         buyerName: t.order.buyerName,
         buyerEmail: t.order.buyerEmail,
-        buyerDNI: t.order.buyerDNI,
-        buyerPhone: t.order.buyerPhone,
+        buyerDNI: t.order.buyerDNI || "N/A", // ✅ Opcional
+        buyerPhone: t.order.buyerPhone || "N/A", // ✅ Opcional
         orderPaymentStatus: t.order.paymentStatus,
         orderPurchaseDate: t.order.purchaseDate.toISOString(),
         createdAt: t.createdAt.toISOString(),
@@ -168,7 +168,7 @@ export async function GET(req: NextRequest) {
         orderNumber: v.ticket.order.orderNumber,
         buyerName: v.ticket.order.buyerName,
         buyerEmail: v.ticket.order.buyerEmail,
-        buyerDNI: v.ticket.order.buyerDNI,
+        buyerDNI: v.ticket.order.buyerDNI || "N/A", // ✅ Opcional
         validatedByName: v.user.name,
         validatedByEmail: v.user.email,
         validatedByRole: v.user.role,

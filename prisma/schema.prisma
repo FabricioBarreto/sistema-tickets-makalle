@@ -1,5 +1,4 @@
-// prisma/schema.prisma (ACTUALIZADO COMPLETO)
-
+// prisma/schema.prisma (ACTUALIZADO - DNI OPCIONAL)
 generator client {
   provider = "prisma-client-js"
 }
@@ -31,7 +30,7 @@ model Order {
   buyerName         String
   buyerEmail        String
   buyerPhone        String?
-  buyerDNI          String?
+  buyerDNI          String?       // ✅ YA ES OPCIONAL
   unitPrice         Decimal       @db.Decimal(10, 2)
   quantity          Int
   totalAmount       Decimal       @db.Decimal(10, 2)
@@ -40,10 +39,7 @@ model Order {
   mercadoPagoStatus String?
   status            OrderStatus   @default(ACTIVE)
   purchaseDate      DateTime      @default(now())
-  
-  // 👇 NUEVO: Token único para descarga segura del PDF
   downloadToken     String?       @unique
-  
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   tickets           Ticket[]
@@ -54,7 +50,7 @@ model Order {
   @@index([orderNumber])
   @@index([mercadoPagoId])
   @@index([paymentStatus])
-  @@index([downloadToken])  // 👈 Índice para búsquedas rápidas
+  @@index([downloadToken])
 }
 
 model Ticket {
@@ -77,19 +73,15 @@ model Ticket {
 
 model SystemConfig {
   id             String   @id @default(cuid())
-  
   ticketPrice    Decimal  @db.Decimal(10, 2)
   totalAvailable Int
   maxPerPurchase Int      @default(10)
   salesEnabled   Boolean  @default(true)
-  
   eventDate      DateTime
   eventName      String
   eventLocation  String?
-  
   emailFrom      String?
   emailEnabled   Boolean  @default(true)
-  
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

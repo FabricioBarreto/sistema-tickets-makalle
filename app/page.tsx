@@ -178,7 +178,7 @@ export default function LandingPage() {
                   behavior: "smooth",
                 })
               }
-              className="bg-gradient-to-r from-pink-600 to-orange-600 text-white px-3 sm:px-6 py-1.5 sm:py-2 rounded-full font-bold text-xs sm:text-sm hover:shadow-lg transition-all"
+              className="bg-gradient-to-r from-yellow-400 to-orange-500 text-gray-900 px-4 sm:px-8 py-2 sm:py-3 rounded-full font-black text-sm sm:text-lg hover:shadow-2xl hover:scale-110 transition-all animate-pulse shadow-lg border-2 border-white"
             >
               <span className="hidden sm:inline">¡Comprar ahora! 🎟️</span>
               <span className="sm:hidden">Comprar 🎟️</span>
