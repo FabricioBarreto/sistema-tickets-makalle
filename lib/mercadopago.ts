@@ -63,44 +63,33 @@ export async function createPreference(params: CreatePreferenceParams) {
   return await preference.create({ body });
 }
 
-type GetPaymentStatusResult =
-  | { success: true; payment: unknown }
-  | { success: false; error: string };
-
-/**
- * Obtiene el pago desde MercadoPago.
- * Nota: devolvemos `unknown` para evitar `any` y porque el SDK puede cambiar el shape.
- * Si después querés, lo tipamos bien con un interface.
- */
 export async function getPaymentStatus(
   paymentId: string,
-): Promise<GetPaymentStatusResult> {
+): Promise<{ success: boolean; payment?: any; error?: string }> {
   try {
     const payment = new Payment(client);
     const result = await payment.get({ id: paymentId });
-    return { success: true, payment: result as unknown };
-  } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+    return { success: true, payment: result };
+  } catch (error: any) {
     console.error("Error fetching payment:", error);
-    return { success: false, error: errorMessage };
+    return { success: false, error: error.message };
   }
 }
 
 export function mapMPStatusToInternal(
   mpStatus: string,
-): "PENDING" | "VALID" | "USED" | "CANCELLED" {
+): "PENDING_PAYMENT" | "PAID" | "VALIDATED" | "CANCELLED" {
   switch (mpStatus) {
     case "approved":
-      return "VALID";
+      return "PAID";
     case "pending":
     case "in_process":
-      return "PENDING";
+      return "PENDING_PAYMENT";
     case "rejected":
     case "cancelled":
       return "CANCELLED";
     default:
-      return "PENDING";
+      return "PENDING_PAYMENT";
   }
 }
 
