@@ -107,7 +107,7 @@ export async function createPreference(
  */
 export async function getPaymentStatus(
   paymentId: string,
-): Promise<{ success: boolean; payment?: any; error?: string }> {
+): Promise<{ success: boolean; payment?: unknown; error?: string }> {
   const apiKey = process.env.UNICOBROS_API_KEY;
   const accessToken = process.env.UNICOBROS_ACCESS_TOKEN;
   const baseUrl =
