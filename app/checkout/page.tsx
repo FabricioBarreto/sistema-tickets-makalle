@@ -131,7 +131,7 @@ function CheckoutContent() {
 
       // 2) Crear preferencia de Mercado Pago
       console.log("💳 Creando preferencia MP...");
-      const mpRes = await fetch("/api/mercadopago/preference", {
+      const mpRes = await fetch("/api/unicobros/preference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId }),
