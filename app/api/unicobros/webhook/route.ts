@@ -17,7 +17,7 @@ function generateDownloadToken(): string {
 export async function POST(request: NextRequest) {
   try {
     const rawBody: unknown = await request.json();
-    const body = rawBody as any;
+    const body = rawBody as unknown;
 
     console.log(
       "🔔 Webhook received from Unicobros:",
