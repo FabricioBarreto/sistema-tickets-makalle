@@ -10,6 +10,24 @@ import {
 import { sendTicketEmailWithQRs } from "@/lib/email";
 import { sendTicketWhatsAppTwilio } from "@/lib/whatsapp-twilio";
 
+// Definir tipos para el webhook
+interface WebhookPayment {
+  id: string | number;
+  reference: string;
+  status?: {
+    code: string;
+  };
+}
+
+interface WebhookData {
+  payment: WebhookPayment;
+}
+
+interface WebhookBody {
+  type: string;
+  data: WebhookData;
+}
+
 function generateDownloadToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
@@ -17,12 +35,24 @@ function generateDownloadToken(): string {
 export async function POST(request: NextRequest) {
   try {
     const rawBody: unknown = await request.json();
-    const body = rawBody as unknown;
 
     console.log(
       "🔔 Webhook received from Unicobros:",
-      JSON.stringify(body, null, 2),
+      JSON.stringify(rawBody, null, 2),
     );
+
+    // Validar que body tenga la estructura esperada
+    if (
+      !rawBody ||
+      typeof rawBody !== "object" ||
+      !("type" in rawBody) ||
+      !("data" in rawBody)
+    ) {
+      console.log("ℹ️ Webhook con estructura inválida, ignorando");
+      return NextResponse.json({ received: true });
+    }
+
+    const body = rawBody as WebhookBody;
 
     // Extraer datos del webhook de Unicobros
     if (body.type !== "checkout" || !body.data) {
