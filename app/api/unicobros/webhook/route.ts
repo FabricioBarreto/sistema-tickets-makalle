@@ -1,104 +1,52 @@
 // app/api/unicobros/webhook/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { TicketStatus } from "@prisma/client";
 import crypto from "crypto";
 import {
-  getPaymentStatus,
   mapMPStatusToInternal,
   mapMPStatusToPaymentStatus,
-  verifyWebhookSignature,
 } from "@/lib/unicobros";
 import { sendTicketEmailWithQRs } from "@/lib/email";
 import { sendTicketWhatsAppTwilio } from "@/lib/whatsapp-twilio";
-
-interface UnicobrosPaymentData {
-  id?: number | string;
-  status: number;
-  external_reference?: string;
-}
 
 function generateDownloadToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-type WebhookBody = {
-  type?: string;
-  action?: string;
-  data?: { id?: string | number };
-  // Unicobros puede enviar directamente los datos del pago:
-  id?: string | number;
-  status?: string;
-  external_reference?: string;
-};
-
 export async function POST(request: NextRequest) {
   try {
     const rawBody: unknown = await request.json();
-    const body = rawBody as WebhookBody;
+    const body = rawBody as any;
 
     console.log(
       "🔔 Webhook received from Unicobros:",
       JSON.stringify(body, null, 2),
     );
 
-    // Verificar firma del webhook (si está configurada)
-    const signature =
-      request.headers.get("x-signature") ||
-      request.headers.get("x-unicobros-signature");
-
-    if (signature && process.env.UNICOBROS_WEBHOOK_SECRET) {
-      console.log("🔐 Verificando firma del webhook...");
-      const isValid = verifyWebhookSignature(body, signature);
-
-      if (!isValid) {
-        console.error("⚠️ Firma del webhook inválida");
-        return NextResponse.json(
-          { received: true, error: "Invalid signature" },
-          { status: 401 },
-        );
-      }
-
-      console.log("✅ Firma verificada");
-    }
-
-    // Extraer ID del pago según la estructura del webhook de Unicobros
-    // Puede venir en body.data.id o directamente en body.id
-    let paymentId: string | number | undefined;
-
-    if (body.type === "payment" && body.data?.id) {
-      paymentId = body.data.id;
-    } else if (body.id) {
-      paymentId = body.id;
-    }
-
-    if (paymentId === undefined || paymentId === null) {
-      console.log("ℹ️ Webhook sin payment ID, ignorando");
+    // Extraer datos del webhook de Unicobros
+    if (body.type !== "checkout" || !body.data) {
+      console.log("ℹ️ Webhook no es de tipo checkout, ignorando");
       return NextResponse.json({ received: true });
     }
 
-    const paymentIdStr = String(paymentId);
-    console.log(`💳 Processing payment ID: ${paymentIdStr}`);
+    const webhookData = body.data;
+    const payment = webhookData.payment;
 
-    // Consultar el estado del pago en Unicobros
-    const paymentInfo = await getPaymentStatus(paymentIdStr);
-
-    if (!paymentInfo.success) {
-      console.error("❌ Failed to get payment info:", paymentInfo.error);
+    if (!payment || !payment.id || !payment.reference) {
+      console.log("ℹ️ Webhook incompleto, ignorando");
       return NextResponse.json({ received: true });
     }
 
-    const payment = paymentInfo.payment as UnicobrosPaymentData;
-    const orderId = payment.external_reference;
+    const paymentId = String(payment.id);
+    const orderId = payment.reference;
+    const statusCode = payment.status?.code || "0";
 
-    if (!orderId) {
-      console.error("❌ No external reference found in payment");
-      return NextResponse.json({ received: true });
-    }
-
+    console.log(`💳 Processing payment ID: ${paymentId}`);
     console.log(`📦 Processing order ID: ${orderId}`);
+    console.log(`📊 Status code: ${statusCode}`);
 
+    // Buscar orden
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: { tickets: true },
@@ -111,21 +59,24 @@ export async function POST(request: NextRequest) {
 
     console.log(`🎫 Found order with ${order.tickets.length} tickets`);
 
-    const ticketStatus = mapMPStatusToInternal(payment.status) as TicketStatus;
-    const paymentStatus = mapMPStatusToPaymentStatus(payment.status);
+    // Mapear status
+    const statusNum = parseInt(statusCode);
+    const ticketStatus = mapMPStatusToInternal(statusNum) as TicketStatus;
+    const paymentStatus = mapMPStatusToPaymentStatus(statusNum);
 
+    // Generar token si no existe
     let downloadToken = order.downloadToken;
     if (!downloadToken) {
       downloadToken = generateDownloadToken();
     }
 
-    // Actualizar orden con info de Unicobros
+    // Actualizar orden
     await prisma.order.update({
       where: { id: order.id },
       data: {
         paymentStatus,
-        mercadoPagoId: String(payment.id), // Reutilizamos el campo para Unicobros
-        mercadoPagoStatus: String(payment.status),
+        mercadoPagoId: paymentId,
+        mercadoPagoStatus: statusCode,
         downloadToken,
       },
     });
@@ -137,8 +88,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Updated order and tickets - Status: ${ticketStatus}`);
 
-    // 🎉 ENVÍO AUTOMÁTICO DE TICKETS (cuando el pago es aprobado)
-    if (payment.status === 200) {
+    // 🎉 ENVÍO AUTOMÁTICO DE TICKETS (status 200 = aprobado)
+    if (statusCode === "200") {
       console.log("💳 Payment approved! Sending notifications...");
 
       const config = await prisma.systemConfig.findFirst();
@@ -167,7 +118,7 @@ export async function POST(request: NextRequest) {
       let emailSent = false;
       let whatsappSent = false;
 
-      // 📧 ENVIAR EMAIL CON QR CODES
+      // 📧 ENVIAR EMAIL
       console.log("[notifications] 📧 Attempting EMAIL delivery...");
       try {
         const emailResult = await sendTicketEmailWithQRs({
@@ -195,7 +146,7 @@ export async function POST(request: NextRequest) {
         console.error("❌ EMAIL exception", err);
       }
 
-      // 📱 ENVIAR WHATSAPP VIA TWILIO
+      // 📱 ENVIAR WHATSAPP
       if (order.buyerPhone) {
         console.log("[notifications] 📱 Attempting WhatsApp delivery...");
 
@@ -204,22 +155,14 @@ export async function POST(request: NextRequest) {
             !process.env.TWILIO_ACCOUNT_SID ||
             !process.env.TWILIO_AUTH_TOKEN
           ) {
-            console.log(
-              "⚠️  WhatsApp: Twilio credentials not configured, skipping",
-            );
+            console.log("⚠️ WhatsApp: Twilio credentials not configured");
           } else if (!process.env.TWILIO_CONTENT_SID) {
-            console.log(
-              "⚠️  WhatsApp: Template not configured (waiting for Meta approval), skipping",
-            );
+            console.log("⚠️ WhatsApp: Template not configured");
           } else {
-            // Normalizar teléfono
             let normalizedPhone = order.buyerPhone.replace(/[^0-9+]/g, "");
             if (!normalizedPhone.startsWith("+")) {
               normalizedPhone = "+54" + normalizedPhone;
             }
-            console.log(
-              `📱 Normalized phone: ${order.buyerPhone} → ${normalizedPhone}`,
-            );
 
             const whatsappResult = await sendTicketWhatsAppTwilio({
               to: normalizedPhone,
@@ -234,54 +177,33 @@ export async function POST(request: NextRequest) {
 
             if (whatsappResult.success) {
               whatsappSent = true;
-              console.log(
-                `✅ WhatsApp sent successfully to ${normalizedPhone}`,
-              );
-              console.log(`📱 Message SID: ${whatsappResult.messageId}`);
-            } else {
-              console.log(
-                `⚠️  WhatsApp failed to ${normalizedPhone}: ${whatsappResult.error}`,
-              );
+              console.log(`✅ WhatsApp sent to ${normalizedPhone}`);
             }
           }
         } catch (err: unknown) {
-          console.log("⚠️  WhatsApp exception (not critical)", err);
+          console.log("⚠️ WhatsApp exception", err);
         }
-      } else {
-        console.log("ℹ️  No phone number provided, skipping WhatsApp");
       }
 
-      // 📊 RESUMEN DE NOTIFICACIONES
+      // 📊 RESUMEN
       console.log("\n📊 Notification Summary:");
       console.log(`   📧 Email: ${emailSent ? "✅ Sent" : "❌ Failed"}`);
-      console.log(
-        `   📱 WhatsApp: ${
-          whatsappSent
-            ? "✅ Sent"
-            : order.buyerPhone
-              ? "⚠️  Skipped/Failed"
-              : "⏭️  No phone"
-        }`,
-      );
+      console.log(`   📱 WhatsApp: ${whatsappSent ? "✅ Sent" : "⏭️ Skipped"}`);
       console.log(`   🔗 Download link: ${downloadUrl}\n`);
-
-      if (!emailSent) {
-        console.error(
-          "⚠️  WARNING: EMAIL delivery failed - customer will need to use download link",
-        );
-      }
     } else {
-      console.log(
-        `⏸️  Payment status is ${payment.status}, not sending notifications yet`,
-      );
+      console.log(`⏸️ Status is ${statusCode}, not sending notifications yet`);
     }
 
     return NextResponse.json({ received: true });
   } catch (error: unknown) {
     console.error("❌ Webhook error:", error);
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ received: true, error: errorMessage });
+    return NextResponse.json(
+      {
+        received: true,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
   }
 }
 
