@@ -7,9 +7,11 @@ import {
   mapMPStatusToInternal,
   mapMPStatusToPaymentStatus,
 } from "@/lib/unicobros";
-import { sendTicketEmailWithQRs } from "@/lib/email";
 import { sendTicketWhatsAppTwilio } from "@/lib/whatsapp-twilio";
+// CAMBIAR EL IMPORT
+import { sendTicketEmailWithGmail as sendTicketEmailWithQRs } from "@/lib/email-gmail";
 
+// El resto del código queda exactamente igual
 // Definir tipos para el webhook
 interface WebhookPayment {
   id: string | number;
