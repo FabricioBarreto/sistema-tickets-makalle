@@ -20,6 +20,15 @@ interface CreateCheckoutParams {
   notificationUrl: string;
 }
 
+interface UnicobrosPayment {
+  id: string | number;
+  status: number;
+  external_reference?: string;
+  total?: number;
+  currency?: string;
+  created?: number;
+}
+
 /**
  * Crea un checkout en Unicobros
  */
@@ -107,7 +116,7 @@ export async function createPreference(
  */
 export async function getPaymentStatus(
   paymentId: string,
-): Promise<{ success: boolean; payment?: unknown; error?: string }> {
+): Promise<{ success: boolean; payment?: UnicobrosPayment; error?: string }> {
   const apiKey = process.env.UNICOBROS_API_KEY;
   const accessToken = process.env.UNICOBROS_ACCESS_TOKEN;
   const baseUrl =
