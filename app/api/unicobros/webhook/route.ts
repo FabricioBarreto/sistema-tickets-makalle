@@ -11,7 +11,6 @@ import { sendTicketWhatsAppTwilio } from "@/lib/whatsapp-twilio";
 // CAMBIAR EL IMPORT
 import { sendTicketEmailWithGmail as sendTicketEmailWithQRs } from "@/lib/email-gmail";
 
-// El resto del código queda exactamente igual
 // Definir tipos para el webhook
 interface WebhookPayment {
   id: string | number;
@@ -73,10 +72,11 @@ export async function POST(request: NextRequest) {
     const paymentId = String(payment.id);
     const orderId = payment.reference;
     const statusCode = payment.status?.code || "0";
+    const statusNum = parseInt(statusCode, 10);
 
     console.log(`💳 Processing payment ID: ${paymentId}`);
     console.log(`📦 Processing order ID: ${orderId}`);
-    console.log(`📊 Status code: ${statusCode}`);
+    console.log(`📊 Status code: ${statusCode} (num=${statusNum})`);
 
     // Buscar orden
     const order = await prisma.order.findUnique({
@@ -92,9 +92,18 @@ export async function POST(request: NextRequest) {
     console.log(`🎫 Found order with ${order.tickets.length} tickets`);
 
     // Mapear status
-    const statusNum = parseInt(statusCode);
     const ticketStatus = mapMPStatusToInternal(statusNum) as TicketStatus;
     const paymentStatus = mapMPStatusToPaymentStatus(statusNum);
+
+    // ✅ ANTI-DOWNGRADE:
+    // Si ya está COMPLETED, ignorar cualquier webhook que no sea COMPLETED.
+    // Esto evita que un 301 tardío te pise un 200 ya confirmado.
+    if (order.paymentStatus === "COMPLETED" && paymentStatus !== "COMPLETED") {
+      console.log(
+        `🛡️ Ignoring downgrade for order ${order.id}: already COMPLETED, incoming=${paymentStatus} (status=${statusCode})`,
+      );
+      return NextResponse.json({ received: true });
+    }
 
     // Generar token si no existe
     let downloadToken = order.downloadToken;
@@ -113,6 +122,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Actualizar tickets
     await prisma.ticket.updateMany({
       where: { orderId: order.id },
       data: { status: ticketStatus },
@@ -121,7 +131,7 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Updated order and tickets - Status: ${ticketStatus}`);
 
     // 🎉 ENVÍO AUTOMÁTICO DE TICKETS (status 200 = aprobado)
-    if (statusCode === "200") {
+    if (statusNum === 200) {
       console.log("💳 Payment approved! Sending notifications...");
 
       const config = await prisma.systemConfig.findFirst();
