@@ -12,6 +12,8 @@ import {
   Users,
   Sparkles,
   Heart,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import Image from "next/image";
@@ -27,7 +29,7 @@ interface SystemConfig {
   totalAvailable: number;
   maxPerPurchase: number;
   salesEnabled: boolean;
-  eventDates: string | EventDate[]; // puede venir como string o array
+  eventDates: string | EventDate[];
   eventName: string;
   eventLocation: string;
 }
@@ -39,10 +41,29 @@ export default function LandingPage() {
   const [soldCount, setSoldCount] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [currentGalleryIndex, setCurrentGalleryIndex] = useState(0);
+
+  // Gallery images
+  const galleryImages = [
+    { src: "/img/gallery/hero-1.jpg", alt: "Pasista con traje rosa y plumas" },
+    { src: "/img/gallery/gallery-3.jpg", alt: "Pasista con traje rosa" },
+    { src: "/img/gallery/gallery-4.jpg", alt: "Pasista con traje rosa" },
+    { src: "/img/gallery/gallery-5.jpg", alt: "Pasista con tocado rosa" },
+    { src: "/img/gallery/gallery-6.jpg", alt: "Pasista rosa en movimiento" },
+    { src: "/img/gallery/gallery-7.jpg", alt: "Pasista rosa en movimiento" },
+  ];
 
   useEffect(() => {
     fetchConfig();
   }, []);
+
+  // Auto-rotate gallery
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentGalleryIndex((prev) => (prev + 1) % galleryImages.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [galleryImages.length]);
 
   const fetchConfig = async () => {
     try {
@@ -52,7 +73,6 @@ export default function LandingPage() {
       if (cfgRes.ok && cfgData?.success) {
         setConfig(cfgData.data);
 
-        // Parse event dates
         let dates: EventDate[] = [];
         try {
           if (typeof cfgData.data.eventDates === "string") {
@@ -90,6 +110,16 @@ export default function LandingPage() {
 
   const handleBuyTickets = () => {
     router.push(`/checkout?quantity=${quantity}`);
+  };
+
+  const nextGalleryImage = () => {
+    setCurrentGalleryIndex((prev) => (prev + 1) % galleryImages.length);
+  };
+
+  const prevGalleryImage = () => {
+    setCurrentGalleryIndex(
+      (prev) => (prev - 1 + galleryImages.length) % galleryImages.length,
+    );
   };
 
   if (loading) {
@@ -204,7 +234,102 @@ export default function LandingPage() {
             <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
           </div>
 
-          {/* Event Dates - Multiple dates display */}
+          {/* Photo Gallery Section - NEW */}
+          <div className="mb-8 sm:mb-12 max-w-5xl mx-auto">
+            <h3 className="text-2xl sm:text-3xl font-black text-white text-center mb-4 sm:mb-6 drop-shadow-lg flex items-center justify-center gap-3">
+              <span className="text-3xl sm:text-4xl">📸</span>
+              Reviví la Magia de Años Anteriores
+              <span className="text-3xl sm:text-4xl">✨</span>
+            </h3>
+
+            {/* Gallery Carousel */}
+            <div className="relative">
+              <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl aspect-[4/3] sm:aspect-[16/9]">
+                {galleryImages.map((img, idx) => (
+                  <div
+                    key={idx}
+                    className={`absolute inset-0 transition-opacity duration-700 ${
+                      idx === currentGalleryIndex ? "opacity-100" : "opacity-0"
+                    }`}
+                  >
+                    <Image
+                      src={img.src}
+                      alt={img.alt}
+                      fill
+                      className="object-cover"
+                      quality={90}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                  </div>
+                ))}
+
+                {/* Navigation Arrows */}
+                <button
+                  onClick={prevGalleryImage}
+                  className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+                  aria-label="Imagen anterior"
+                >
+                  <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-900" />
+                </button>
+                <button
+                  onClick={nextGalleryImage}
+                  className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+                  aria-label="Imagen siguiente"
+                >
+                  <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-gray-900" />
+                </button>
+
+                {/* Dots Indicator */}
+                <div className="absolute bottom-3 sm:bottom-4 left-0 right-0 flex items-center justify-center gap-2 z-10">
+                  {galleryImages.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentGalleryIndex(idx)}
+                      className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full transition-all ${
+                        idx === currentGalleryIndex
+                          ? "bg-white w-6 sm:w-8"
+                          : "bg-white/50 hover:bg-white/75"
+                      }`}
+                      aria-label={`Ir a imagen ${idx + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Gallery Caption */}
+              <div className="mt-3 sm:mt-4 text-center">
+                <p className="text-white text-sm sm:text-base drop-shadow-lg font-medium">
+                  ¡Vení a vivir esta increíble experiencia en vivo! 🎉
+                </p>
+              </div>
+            </div>
+
+            {/* Mini Gallery Grid - Desktop Only */}
+            <div className="hidden lg:grid grid-cols-4 gap-4 mt-6">
+              {galleryImages.slice(0, 4).map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setCurrentGalleryIndex(idx)}
+                  className={`relative rounded-xl overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all hover:scale-105 ${
+                    idx === currentGalleryIndex
+                      ? "ring-4 ring-white ring-offset-2 ring-offset-pink-500"
+                      : ""
+                  }`}
+                >
+                  <Image
+                    src={img.src}
+                    alt={img.alt}
+                    fill
+                    className="object-cover"
+                    quality={75}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Event Dates */}
           {eventDates.length > 0 && (
             <div className="mb-6 sm:mb-8 max-w-5xl mx-auto">
               <h3 className="text-xl sm:text-2xl font-bold text-white text-center mb-4 drop-shadow-lg">
@@ -235,7 +360,9 @@ export default function LandingPage() {
                         </div>
                       </div>
                       <div className="text-xs sm:text-sm text-gray-600">
-                        {date.toLocaleDateString("es-AR", { weekday: "long" })}{" "}
+                        {date.toLocaleDateString("es-AR", {
+                          weekday: "long",
+                        })}{" "}
                         • 21:00 hs
                       </div>
                     </div>
@@ -244,6 +371,60 @@ export default function LandingPage() {
               </div>
             </div>
           )}
+
+          {/* Program Schedule Section */}
+          <div className="mb-6 sm:mb-8 max-w-5xl mx-auto">
+            <h3 className="text-2xl sm:text-3xl font-bold text-white text-center mb-4 sm:mb-6 drop-shadow-lg flex items-center justify-center gap-3">
+              <span className="text-3xl sm:text-4xl">🎭</span>
+              Programación de Comparsas
+              <span className="text-3xl sm:text-4xl">🎉</span>
+            </h3>
+
+            {/* Full Schedule Image */}
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl hover:shadow-3xl transition-all">
+              <Image
+                src="/img/cronograma.jpg"
+                alt="Cronograma Carnavales Makallé 2026"
+                width={1200}
+                height={1400}
+                className="w-full h-auto rounded-xl"
+                quality={90}
+              />
+            </div>
+
+            {/* Quick Info Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mt-4 sm:mt-6">
+              <div className="bg-gradient-to-br from-pink-500 to-red-500 rounded-xl p-4 text-white shadow-lg">
+                <div className="text-2xl mb-2">🎭</div>
+                <div className="font-bold text-sm sm:text-base mb-1">
+                  Grilla Principal
+                </div>
+                <div className="text-xs sm:text-sm opacity-90">
+                  21:00 - 22:00 hs
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl p-4 text-white shadow-lg">
+                <div className="text-2xl mb-2">🎊</div>
+                <div className="font-bold text-sm sm:text-base mb-1">
+                  Comparsas Locales
+                </div>
+                <div className="text-xs sm:text-sm opacity-90">
+                  22:00 - 02:00 hs
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-orange-500 to-yellow-500 rounded-xl p-4 text-white shadow-lg">
+                <div className="text-2xl mb-2">🎉</div>
+                <div className="font-bold text-sm sm:text-base mb-1">
+                  Cierre Espectacular
+                </div>
+                <div className="text-xs sm:text-sm opacity-90">
+                  03:00 - 04:30 hs
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/* Event Info Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-8 sm:mb-12 max-w-5xl mx-auto">
@@ -393,7 +574,7 @@ export default function LandingPage() {
                       Pago Seguro
                     </div>
                     <div className="text-xs sm:text-sm text-gray-600">
-                      Procesado por Mercado Pago
+                      Procesado por Unicobros
                     </div>
                   </div>
                 </div>
@@ -508,7 +689,7 @@ export default function LandingPage() {
               <div className="text-center mt-3 sm:mt-4 text-xs sm:text-sm text-gray-600 flex items-center justify-center gap-2">
                 <Shield className="w-3 h-3 sm:w-4 sm:h-4 text-green-600" />
                 <span className="font-medium">
-                  Pago 100% seguro con Mercado Pago
+                  Pago 100% seguro con Unicobros
                 </span>
               </div>
             </div>
@@ -536,7 +717,7 @@ export default function LandingPage() {
                   Pagá seguro
                 </div>
                 <div className="text-sm sm:text-base text-gray-600">
-                  Con Mercado Pago
+                  Con Unicobros
                 </div>
               </div>
 
@@ -557,7 +738,6 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="bg-gradient-to-r from-pink-900 via-red-900 to-orange-900 py-6 sm:py-8">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          {" "}
           <p className="text-white/70 text-xs sm:text-sm px-4">
             © 2026 Carnavales Makallé - Municipio de Makallé - Todos los
             derechos reservados
