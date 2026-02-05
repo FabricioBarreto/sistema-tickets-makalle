@@ -46,6 +46,7 @@ export default function LandingPage() {
   // Gallery images
   const galleryImages = [
     { src: "/img/gallery/hero-1.jpg", alt: "Pasista con traje rosa y plumas" },
+    { src: "/img/gallery/hero-2.jpg", alt: "Pasista con traje rosa y plumas" },
     { src: "/img/gallery/gallery-3.jpg", alt: "Pasista con traje rosa" },
     { src: "/img/gallery/gallery-4.jpg", alt: "Pasista con traje rosa" },
     { src: "/img/gallery/gallery-5.jpg", alt: "Pasista con tocado rosa" },
