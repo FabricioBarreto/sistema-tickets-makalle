@@ -1,0 +1,10 @@
+{
+  "name": "Validador QR - Carnaval Makallé",
+  "short_name": "Validador QR",
+  "description": "App de validación de entradas para Carnaval Makallé",
+  "start_url": "/operador/validate",
+  "display": "standalone",
+  "background_color": "#9333ea",
+  "theme_color": "#9333ea",
+  "orientation": "portrait"
+}
