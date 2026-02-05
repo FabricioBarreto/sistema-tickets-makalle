@@ -31,7 +31,13 @@ interface TicketInfo {
   validatedBy?: { name: string };
 }
 
-type ScanStatus = "idle" | "validating" | "success" | "error" | "already-used";
+type ScanStatus =
+  | "idle"
+  | "validating"
+  | "success"
+  | "error"
+  | "already-used"
+  | "payment-pending";
 
 export default function ValidatePage() {
   const { data: session, status } = useSession();
@@ -48,9 +54,20 @@ export default function ValidatePage() {
     }
   }, [status, router]);
 
-  const handleScan = async (decodedText: string) => {
+  const validateCode = async (code: string) => {
+    const response = await fetch("/api/tickets/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ qrCode: code }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  };
+
+  const handleScan = async (decodedText: string, force = false) => {
     if (scanStatus === "validating") return;
-    if (decodedText === lastScannedCode) return;
+    if (!force && decodedText === lastScannedCode) return;
 
     setLastScannedCode(decodedText);
     setScanStatus("validating");
@@ -58,13 +75,7 @@ export default function ValidatePage() {
     setTicketInfo(null);
 
     try {
-      const response = await fetch("/api/tickets/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrCode: decodedText }),
-      });
-
-      const data = await response.json();
+      const { response, data } = await validateCode(decodedText);
 
       if (response.ok && data.success) {
         setScanStatus("success");
@@ -72,41 +83,49 @@ export default function ValidatePage() {
         setTicketInfo(data.ticket);
         setValidationCount((prev) => prev + 1);
 
-        // Vibración de éxito
-        if (navigator.vibrate) {
-          navigator.vibrate([100, 50, 100]);
-        }
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 
-        // Auto-reset después de 5 segundos
         setTimeout(() => {
           resetScan();
         }, 5000);
-      } else if (data.message?.includes("ya fue utilizada")) {
+        return;
+      }
+
+      // 🟡 Pago pendiente (caso Unicobros 301 / paymentStatus=PENDING)
+      if (response.status === 409 && data?.error === "PAYMENT_PENDING") {
+        setScanStatus("payment-pending");
+        setMessage("⏳ Pago pendiente: todavía no fue confirmado");
+        setTicketInfo(data.ticket ?? null);
+
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        return;
+      }
+
+      // 🟠 Ya utilizada
+      if (data.message?.includes("ya fue utilizada")) {
         setScanStatus("already-used");
         setMessage("⚠️ Entrada ya utilizada anteriormente");
         setTicketInfo(data.ticket);
 
-        // Vibración de advertencia
-        if (navigator.vibrate) {
-          navigator.vibrate([200, 100, 200, 100, 200]);
-        }
-      } else {
-        setScanStatus("error");
-        setMessage(data.message || "Error al validar la entrada");
-
-        // Vibración de error
-        if (navigator.vibrate) {
-          navigator.vibrate([500]);
-        }
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+        return;
       }
+
+      // 🔴 Error genérico
+      setScanStatus("error");
+      setMessage(data.message || "Error al validar la entrada");
+      if (navigator.vibrate) navigator.vibrate([500]);
     } catch (error) {
       setScanStatus("error");
       setMessage("Error de conexión. Intenta nuevamente.");
-
-      if (navigator.vibrate) {
-        navigator.vibrate([500]);
-      }
+      if (navigator.vibrate) navigator.vibrate([500]);
     }
+  };
+
+  const retryLast = () => {
+    if (!lastScannedCode) return;
+    // Forzamos reintento del mismo QR (sin que lo bloquee "mismo código")
+    handleScan(lastScannedCode, true);
   };
 
   const resetScan = () => {
@@ -201,7 +220,11 @@ export default function ValidatePage() {
                   ? "Procesando..."
                   : scanStatus === "success"
                     ? "Validado ✓"
-                    : "Error"}
+                    : scanStatus === "payment-pending"
+                      ? "Pago pendiente"
+                      : scanStatus === "already-used"
+                        ? "Ya usada"
+                        : "Error"}
             </p>
           </div>
         </div>
@@ -220,7 +243,7 @@ export default function ValidatePage() {
           <div className="p-4">
             {scanStatus === "idle" || scanStatus === "validating" ? (
               <QRScanner
-                onScan={handleScan}
+                onScan={(txt) => handleScan(txt)}
                 onError={(error) => {
                   setScanStatus("error");
                   setMessage(error);
@@ -233,7 +256,8 @@ export default function ValidatePage() {
                   className={`rounded-xl p-6 border-4 ${
                     scanStatus === "success"
                       ? "bg-green-50 border-green-300"
-                      : scanStatus === "already-used"
+                      : scanStatus === "already-used" ||
+                          scanStatus === "payment-pending"
                         ? "bg-orange-50 border-orange-300"
                         : "bg-red-50 border-red-300"
                   }`}
@@ -241,7 +265,8 @@ export default function ValidatePage() {
                   <div className="flex items-start gap-4">
                     {scanStatus === "success" ? (
                       <CheckCircle2 className="h-12 w-12 text-green-600 flex-shrink-0" />
-                    ) : scanStatus === "already-used" ? (
+                    ) : scanStatus === "already-used" ||
+                      scanStatus === "payment-pending" ? (
                       <AlertCircle className="h-12 w-12 text-orange-600 flex-shrink-0" />
                     ) : (
                       <XCircle className="h-12 w-12 text-red-600 flex-shrink-0" />
@@ -251,7 +276,8 @@ export default function ValidatePage() {
                         className={`text-xl font-black mb-2 ${
                           scanStatus === "success"
                             ? "text-green-900"
-                            : scanStatus === "already-used"
+                            : scanStatus === "already-used" ||
+                                scanStatus === "payment-pending"
                               ? "text-orange-900"
                               : "text-red-900"
                         }`}
@@ -330,14 +356,34 @@ export default function ValidatePage() {
                   </div>
                 </div>
 
-                {/* Action Button */}
-                <Button
-                  onClick={resetScan}
-                  className="w-full h-14 text-base font-bold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                  size="lg"
-                >
-                  Escanear Siguiente
-                </Button>
+                {/* Action Buttons */}
+                {scanStatus === "payment-pending" ? (
+                  <div className="space-y-3">
+                    <Button
+                      onClick={retryLast}
+                      className="w-full h-14 text-base font-bold bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
+                      size="lg"
+                    >
+                      Reintentar
+                    </Button>
+
+                    <Button
+                      onClick={resetScan}
+                      className="w-full h-14 text-base font-bold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                      size="lg"
+                    >
+                      Escanear Siguiente
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    onClick={resetScan}
+                    className="w-full h-14 text-base font-bold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                    size="lg"
+                  >
+                    Escanear Siguiente
+                  </Button>
+                )}
               </div>
             )}
           </div>

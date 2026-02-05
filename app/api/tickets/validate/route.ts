@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const code = qrCode.trim();
+    const code = String(qrCode).trim();
 
     // Buscar el ticket por QR hash o código manual
     const ticket = await prisma.ticket.findFirst({
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
             unitPrice: true,
             quantity: true,
             paymentStatus: true,
+            mercadoPagoStatus: true, // (en tu caso: status de Unicobros tipo 200/301)
           },
         },
         validations: {
@@ -85,14 +86,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verificar estado de pago
+    // ✅ Verificar estado de pago (caso REAL: pago pendiente)
     if (ticket.order.paymentStatus !== "COMPLETED") {
       return NextResponse.json(
         {
           success: false,
-          message: "Entrada no pagada o pago pendiente",
+          error: "PAYMENT_PENDING",
+          message: "Pago aún no confirmado. Esperá unos segundos y reintentá.",
+          ticket: {
+            id: ticket.id,
+            orderNumber: ticket.order.orderNumber,
+            buyerName: ticket.order.buyerName,
+            buyerEmail: ticket.order.buyerEmail,
+            buyerDNI: ticket.order.buyerDNI,
+            quantity: ticket.order.quantity,
+            validated: false,
+          },
+          payment: {
+            paymentStatus: ticket.order.paymentStatus,
+            providerStatus: ticket.order.mercadoPagoStatus, // 200/301 en Unicobros
+          },
         },
-        { status: 400 },
+        { status: 409 },
       );
     }
 
