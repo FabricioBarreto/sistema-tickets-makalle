@@ -8,17 +8,20 @@ import { Button } from "@/components/ui/button";
 interface QRScannerProps {
   onScan: (decodedText: string) => void;
   onError?: (error: string) => void;
+  enabled?: boolean; // 🆕 Prop para controlar externamente
 }
 
-export function QRScanner({ onScan, onError }: QRScannerProps) {
+export function QRScanner({ onScan, onError, enabled = true }: QRScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const hasScannedRef = useRef(false); // 🆕 Flag anti-loop
   const qrCodeRegionId = "qr-reader";
 
   const startScanning = async () => {
     try {
       setError(null);
+      hasScannedRef.current = false; // Reset flag
 
       const html5QrCode = new Html5Qrcode(qrCodeRegionId);
       scannerRef.current = html5QrCode;
@@ -41,8 +44,20 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
         { facingMode: "environment" },
         config,
         (decodedText) => {
+          // 🚫 CRÍTICO: Prevenir múltiples callbacks
+          if (hasScannedRef.current) {
+            console.log("🚫 Ya procesado, ignorando...");
+            return;
+          }
+
+          hasScannedRef.current = true;
+          console.log("✅ QR detectado:", decodedText.substring(0, 20));
+
+          // Parar INMEDIATAMENTE
+          stopScanningImmediate();
+
+          // Callback al padre
           onScan(decodedText);
-          stopScanning();
         },
         (errorMessage) => {
           // Ignorar errores de escaneo continuo
@@ -58,11 +73,13 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
     }
   };
 
-  const stopScanning = async () => {
-    if (scannerRef.current && isScanning) {
+  // 🔥 NUEVA FUNCIÓN: Para sin verificar estado
+  const stopScanningImmediate = async () => {
+    if (scannerRef.current) {
       try {
         await scannerRef.current.stop();
         scannerRef.current.clear();
+        console.log("📷 Cámara detenida");
       } catch (err) {
         console.error("Error stopping scanner:", err);
       }
@@ -70,9 +87,23 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
     }
   };
 
+  const stopScanning = async () => {
+    if (scannerRef.current && isScanning) {
+      await stopScanningImmediate();
+    }
+  };
+
+  // 🆕 Efecto para controlar desde afuera
+  useEffect(() => {
+    if (!enabled && isScanning) {
+      console.log("🔴 Deshabilitado externamente, parando...");
+      stopScanningImmediate();
+    }
+  }, [enabled]);
+
   useEffect(() => {
     return () => {
-      stopScanning();
+      stopScanningImmediate();
     };
   }, []);
 
@@ -107,6 +138,7 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
             onClick={startScanning}
             className="w-full h-14 text-base font-semibold bg-purple-600 hover:bg-purple-700"
             size="lg"
+            disabled={!enabled}
           >
             <Camera className="mr-2 h-5 w-5" />
             Iniciar Cámara
