@@ -16,12 +16,14 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user)
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   interface SessionUser {
     name?: string | null;
     email?: string | null;
     image?: string | null;
     role?: string;
   }
+
   const user = session.user as SessionUser;
   if (user.role !== "ADMIN")
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -38,19 +40,22 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json({ success: true, data: users });
+  // 🔧 CAMBIO: Retornar con la key "users" en lugar de "data"
+  return NextResponse.json({ success: true, users });
 }
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user)
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   interface SessionUser {
     name?: string | null;
     email?: string | null;
     image?: string | null;
     role?: string;
   }
+
   const me = session.user as SessionUser;
   if (me.role !== "ADMIN")
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -84,11 +89,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, data: created });
+    // 🔧 CAMBIO: Retornar con la key "user" para consistencia
+    return NextResponse.json({ success: true, user: created });
   } catch (e: unknown) {
-    // email unique
+    console.error("Error creating user:", e);
     return NextResponse.json(
-      { error: "No se pudo crear (¿email ya existe?)" },
+      { success: false, message: "No se pudo crear (¿email ya existe?)" },
       { status: 409 },
     );
   }

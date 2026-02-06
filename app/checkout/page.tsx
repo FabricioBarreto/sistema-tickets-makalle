@@ -129,8 +129,8 @@ function CheckoutContent() {
       const { id: orderId } = createData.data;
       console.log("✅ Order ID:", orderId);
 
-      // 2) Crear preferencia de Mercado Pago
-      console.log("💳 Creando preferencia MP...");
+      // 2) Crear preferencia de Unicobros
+      console.log("💳 Creando preferencia Unicobros...");
       const mpRes = await fetch("/api/unicobros/preference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -155,12 +155,12 @@ function CheckoutContent() {
 
       if (!mpData.initPoint) {
         console.error("❌ MP Data completo:", JSON.stringify(mpData, null, 2));
-        throw new Error("No se recibió el link de pago de Mercado Pago");
+        throw new Error("No se recibió el link de pago de Unicobros");
       }
 
       console.log("✅ Redirigiendo a:", mpData.initPoint);
 
-      // 3) Redirigir a Mercado Pago
+      // 3) Redirigir a Unicobros
       window.location.href = mpData.initPoint;
     } catch (error: unknown) {
       console.error("❌ Error completo:", error);
@@ -319,7 +319,7 @@ function CheckoutContent() {
                 </div>
 
                 <p className="text-sm text-gray-500 text-center">
-                  Al continuar, serás redirigido a Mercado Pago para completar
+                  Al continuar, serás redirigido a Unicobros para completar
                   el pago de forma segura
                 </p>
               </form>
@@ -360,7 +360,7 @@ function CheckoutContent() {
                   Pago 100% seguro
                 </h3>
                 <p className="text-sm text-blue-800">
-                  Tu pago es procesado de forma segura por Mercado Pago.
+                  Tu pago es procesado de forma segura por Unicobros.
                   Aceptamos todas las tarjetas de crédito y débito.
                 </p>
               </div>

@@ -51,7 +51,7 @@ export interface TicketFilters {
 }
 
 // ============================================
-// Tipos de Mercado Pago
+// Tipos de Unicobros
 // ============================================
 
 export interface MercadoPagoPreference {

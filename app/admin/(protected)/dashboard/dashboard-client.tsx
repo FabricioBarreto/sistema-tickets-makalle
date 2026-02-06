@@ -10,6 +10,7 @@ import {
   Download,
   Users,
   Clock,
+  Loader2,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -27,6 +28,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { toast } from "sonner";
 
 interface DashboardStats {
   grossRevenue: number;
@@ -43,42 +45,126 @@ interface SalesByDay {
   date: string;
   sales: number;
   revenue: number;
+  validated: number;
 }
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [salesByDay, setSalesByDay] = useState<SalesByDay[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch("/api/stats", { cache: "no-store" });
-      const data = await response.json();
+      // Stats generales
+      const statsRes = await fetch("/api/stats", { cache: "no-store" });
+      const statsData = await statsRes.json();
 
-      if (data?.success) setStats(data.data);
+      if (statsData?.success) {
+        setStats(statsData.data);
+      }
 
-      // TODO: reemplazar por data real desde API (ventas por día)
-      setSalesByDay([
-        { date: "4 Feb", sales: 120, revenue: 240000 },
-        { date: "5 Feb", sales: 150, revenue: 300000 },
-        { date: "6 Feb", sales: 180, revenue: 360000 },
-        { date: "7 Feb", sales: 280, revenue: 560000 },
-        { date: "8 Feb", sales: 200, revenue: 400000 },
-      ]);
+      // Obtener órdenes para calcular ventas por día
+      const ordersRes = await fetch("/api/orders", { cache: "no-store" });
+      const ordersData = await ordersRes.json();
+
+      if (ordersData?.success) {
+        const byDay = calculateSalesByDay(ordersData.orders);
+        setSalesByDay(byDay);
+      }
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
+      toast.error("Error cargando datos del dashboard");
     } finally {
       setLoading(false);
     }
   };
 
+  const calculateSalesByDay = (
+    orders: Array<{
+      paymentStatus: string;
+      purchaseDate: string;
+      quantity: number;
+      totalAmount: number | string;
+      tickets?: Array<{ validated: boolean }>;
+    }>,
+  ) => {
+    const groupedByDay = new Map<
+      string,
+      { sales: number; revenue: number; validated: number }
+    >();
+
+    orders
+      .filter((o) => o.paymentStatus === "COMPLETED")
+      .forEach((order) => {
+        const date = new Date(order.purchaseDate);
+        const dateKey = `${date.getDate()}/${date.getMonth() + 1}`;
+
+        const current = groupedByDay.get(dateKey) || {
+          sales: 0,
+          revenue: 0,
+          validated: 0,
+        };
+
+        const validatedCount =
+          order.tickets?.filter((t) => t.validated).length || 0;
+
+        groupedByDay.set(dateKey, {
+          sales: current.sales + order.quantity,
+          revenue: current.revenue + Number(order.totalAmount),
+          validated: current.validated + validatedCount,
+        });
+      });
+
+    // Convertir a array y ordenar por fecha
+    const result = Array.from(groupedByDay.entries())
+      .map(([date, data]) => ({
+        date,
+        ...data,
+      }))
+      .sort((a, b) => {
+        const [dayA, monthA] = a.date.split("/").map(Number);
+        const [dayB, monthB] = b.date.split("/").map(Number);
+        if (monthA !== monthB) return monthA - monthB;
+        return dayA - dayB;
+      })
+      .slice(-7); // Últimos 7 días
+
+    return result;
+  };
+
+  const exportDashboard = async () => {
+    setExporting(true);
+    try {
+      const response = await fetch("/api/reports/export?type=financial");
+
+      if (!response.ok) throw new Error("Error exportando");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `dashboard-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success("Reporte exportado");
+    } catch (err) {
+      toast.error("Error al exportar");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const conversionRate = useMemo(() => {
     if (!stats) return 0;
-    // Conversión = validadas / vendidas (si querés vendidas/disponibles, lo cambiamos)
     return (stats.validatedCount / Math.max(stats.soldCount, 1)) * 100;
   }, [stats]);
 
@@ -90,15 +176,16 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin mx-auto text-purple-600 mb-4" />
+          <p className="text-gray-600">Cargando dashboard...</p>
+        </div>
       </div>
     );
   }
 
-  // Pie: solo GENERAL (100%)
   const pieData = [{ name: "General", value: 100 }];
 
-  // Estado de validaciones: validadas vs pendientes
   const validationData = [
     { name: "Válidas", value: stats?.validatedCount ?? 0, color: "#10b981" },
     {
@@ -112,7 +199,6 @@ export default function DashboardPage() {
     { name: "Canceladas", value: 0, color: "#ef4444" },
   ];
 
-  // Para mostrar total = vendidas + disponibles restantes
   const total = (stats?.soldCount ?? 0) + (stats?.available ?? 0);
 
   return (
@@ -125,9 +211,22 @@ export default function DashboardPage() {
           </h1>
           <p className="text-gray-600 mt-1">Carnaval 2026</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          <Download className="w-4 h-4" />
-          Exportar
+        <button
+          onClick={exportDashboard}
+          disabled={exporting}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {exporting ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Exportando...
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4" />
+              Exportar
+            </>
+          )}
         </button>
       </div>
 
@@ -137,7 +236,11 @@ export default function DashboardPage() {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <DollarSign className="w-8 h-8 text-blue-600" />
-            <TrendingUp className="w-5 h-5 text-green-500" />
+            {salesByDay.length > 0 &&
+              salesByDay[salesByDay.length - 1].revenue >
+                (salesByDay[salesByDay.length - 2]?.revenue || 0) && (
+                <TrendingUp className="w-5 h-5 text-green-500" />
+              )}
           </div>
           <p className="text-sm text-gray-600 mb-1">Total Recaudado</p>
           <p className="text-3xl font-bold text-gray-900">
@@ -199,12 +302,7 @@ export default function DashboardPage() {
           <div className="mt-4">
             <div className="h-12">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={salesByDay.map((d, i) => ({
-                    ...d,
-                    validated: Math.floor(d.sales * 0.8),
-                  }))}
-                >
+                <LineChart data={salesByDay}>
                   <Line
                     type="monotone"
                     dataKey="validated"
@@ -231,20 +329,13 @@ export default function DashboardPage() {
             {conversionRate.toFixed(1)}%
           </p>
           <div className="mt-4">
-            <div className="h-12">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={salesByDay.map((d, i) => ({ ...d, rate: 70 + i * 2 }))}
-                >
-                  <Line
-                    type="monotone"
-                    dataKey="rate"
-                    stroke="#a855f7"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="h-12 flex items-center">
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-purple-600 h-2 rounded-full transition-all"
+                  style={{ width: `${Math.min(conversionRate, 100)}%` }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -255,29 +346,37 @@ export default function DashboardPage() {
         {/* Ventas por Día */}
         <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold mb-4">Ventas por Día</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={salesByDay}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" stroke="#666" />
-              <YAxis stroke="#666" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "8px",
-                }}
-                formatter={(value: number | undefined) => formatCurrency(value ?? 0)}
-              />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="revenue"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                name="Recaudación"
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {salesByDay.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={salesByDay}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" stroke="#666" />
+                <YAxis stroke="#666" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#fff",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                  }}
+                  formatter={(value) =>
+                    value ? formatCurrency(value as number) : "$0"
+                  }
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  name="Recaudación"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-gray-500">
+              No hay datos de ventas aún
+            </div>
+          )}
         </div>
 
         {/* Ventas por Tipo */}
