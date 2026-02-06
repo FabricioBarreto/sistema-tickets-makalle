@@ -26,7 +26,7 @@ interface TicketInfo {
   buyerDNI?: string;
   quantity: number;
   validated: boolean;
-  validatedAt?: Date;
+  validatedAt?: Date | string;
   validatedBy?: { name: string; email?: string };
 }
 
@@ -60,6 +60,37 @@ export default function ValidatePage() {
     }
   }, [status, router]);
 
+  // 🆕 Función para formatear fecha/hora
+  const formatValidationTime = (dateString?: Date | string) => {
+    if (!dateString) return null;
+
+    const date = new Date(dateString);
+
+    // Verificar si la fecha es válida
+    if (isNaN(date.getTime())) return null;
+
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+
+    const timeString = date.toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
+    if (isToday) {
+      return `Hoy a las ${timeString}`;
+    }
+
+    const dateString = date.toLocaleDateString("es-AR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+
+    return `${dateString} a las ${timeString}`;
+  };
+
   async function validateCode(code: string) {
     const response = await fetch("/api/tickets/validate", {
       method: "POST",
@@ -77,7 +108,7 @@ export default function ValidatePage() {
       console.log("🚫 Scanner deshabilitado");
       return;
     }
-    
+
     if (scanStatus === "validating") {
       console.log("🚫 Ya validando...");
       return;
@@ -114,7 +145,7 @@ export default function ValidatePage() {
         setMessage(data.message || "✅ Entrada validada correctamente");
         setTicketInfo(data.ticket);
         setValidationCount((prev) => prev + 1);
-        
+
         // Auto-reset después de 3 segundos
         setTimeout(() => {
           if (scanStatus === "success") {
@@ -125,10 +156,7 @@ export default function ValidatePage() {
       }
 
       // 💳 PAGO PENDIENTE
-      if (
-        response.status === 409 &&
-        data?.error === "PAYMENT_PENDING"
-      ) {
+      if (response.status === 409 && data?.error === "PAYMENT_PENDING") {
         setScanStatus("payment-pending");
         setMessage(data.message || "⏳ Pago pendiente");
         setTicketInfo(data.ticket ?? null);
@@ -157,7 +185,6 @@ export default function ValidatePage() {
       // ❌ OTRO ERROR
       setScanStatus("error");
       setMessage(data.message || "Error al validar la entrada");
-      
     } catch (error) {
       console.error("Error en validación:", error);
       setScanStatus("error");
@@ -246,6 +273,7 @@ export default function ValidatePage() {
                 setMessage(err);
                 setScannerEnabled(false);
               }}
+              enabled={scannerEnabled}
             />
           ) : (
             <div className="text-center text-gray-500 py-20 space-y-3">
@@ -260,14 +288,19 @@ export default function ValidatePage() {
 
         {/* RESULTADO */}
         {scanStatus !== "idle" && (
-          <div className={`rounded-xl shadow-lg p-6 space-y-4 ${
-            scanStatus === "success" ? "bg-green-50 border-2 border-green-500" :
-            scanStatus === "already-used" ? "bg-orange-50 border-2 border-orange-500" :
-            scanStatus === "payment-pending" ? "bg-yellow-50 border-2 border-yellow-500" :
-            scanStatus === "not-found" ? "bg-red-50 border-2 border-red-500" :
-            "bg-white"
-          }`}>
-            
+          <div
+            className={`rounded-xl shadow-lg p-6 space-y-4 ${
+              scanStatus === "success"
+                ? "bg-green-50 border-2 border-green-500"
+                : scanStatus === "already-used"
+                  ? "bg-orange-50 border-2 border-orange-500"
+                  : scanStatus === "payment-pending"
+                    ? "bg-yellow-50 border-2 border-yellow-500"
+                    : scanStatus === "not-found"
+                      ? "bg-red-50 border-2 border-red-500"
+                      : "bg-white"
+            }`}
+          >
             {/* ICONO + MENSAJE */}
             <div className="flex items-start gap-4">
               {scanStatus === "validating" && (
@@ -285,7 +318,7 @@ export default function ValidatePage() {
               {(scanStatus === "error" || scanStatus === "not-found") && (
                 <XCircle className="h-8 w-8 text-red-600 flex-shrink-0" />
               )}
-              
+
               <div className="flex-1">
                 <h2 className="font-bold text-xl">{message}</h2>
               </div>
@@ -293,12 +326,12 @@ export default function ValidatePage() {
 
             {/* INFO DEL TICKET */}
             {ticketInfo && (
-              <div className="bg-white rounded-lg p-4 space-y-2 text-sm border">
+              <div className="bg-white rounded-lg p-4 space-y-3 text-sm border">
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-gray-400" />
                   <span className="font-semibold">{ticketInfo.buyerName}</span>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <Hash className="h-4 w-4 text-gray-400" />
                   <span className="text-gray-600">
@@ -314,11 +347,31 @@ export default function ValidatePage() {
                   </div>
                 )}
 
-                {ticketInfo.validated && ticketInfo.validatedBy && (
-                  <div className="pt-2 border-t text-xs text-gray-500">
-                    Validada por: {ticketInfo.validatedBy.name}
-                  </div>
-                )}
+                {/* 🆕 INFORMACIÓN DE VALIDACIÓN CON HORA */}
+                {ticketInfo.validated &&
+                  (ticketInfo.validatedBy || ticketInfo.validatedAt) && (
+                    <div className="pt-3 border-t space-y-1">
+                      {ticketInfo.validatedBy && (
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          <span>
+                            Validada por:{" "}
+                            <strong className="text-gray-900">
+                              {ticketInfo.validatedBy.name}
+                            </strong>
+                          </span>
+                        </div>
+                      )}
+                      {ticketInfo.validatedAt && (
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                          <Clock className="h-3.5 w-3.5" />
+                          <span>
+                            {formatValidationTime(ticketInfo.validatedAt)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
               </div>
             )}
 
@@ -351,8 +404,8 @@ export default function ValidatePage() {
                 </Button>
               )}
 
-              {(scanStatus === "already-used" || 
-                scanStatus === "error" || 
+              {(scanStatus === "already-used" ||
+                scanStatus === "error" ||
                 scanStatus === "not-found") && (
                 <Button
                   onClick={resetScan}
