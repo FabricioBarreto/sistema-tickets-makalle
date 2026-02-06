@@ -42,6 +42,7 @@ export default function LandingPage() {
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
   const [currentGalleryIndex, setCurrentGalleryIndex] = useState(0);
+  const [currentScheduleIndex, setCurrentScheduleIndex] = useState(0);
 
   // Gallery images
   const galleryImages = [
@@ -52,6 +53,28 @@ export default function LandingPage() {
     { src: "/img/gallery/gallery-5.jpg", alt: "Pasista con tocado rosa" },
     { src: "/img/gallery/gallery-6.jpg", alt: "Pasista rosa en movimiento" },
     { src: "/img/gallery/gallery-7.jpg", alt: "Pasista rosa en movimiento" },
+  ];
+
+  // Schedule images - NEW
+  const scheduleImages = [
+    {
+      src: "/img/cronograma-viernes.jpg",
+      alt: "Cronograma Viernes 13 de Febrero",
+      day: "Viernes 13",
+      date: "2026-02-13",
+    },
+    {
+      src: "/img/cronograma-sabado.jpg",
+      alt: "Cronograma Sábado 14 de Febrero",
+      day: "Sábado 14",
+      date: "2026-02-14",
+    },
+    {
+      src: "/img/cronograma-domingo.jpg",
+      alt: "Cronograma Domingo 15 de Febrero",
+      day: "Domingo 15",
+      date: "2026-02-15",
+    },
   ];
 
   useEffect(() => {
@@ -120,6 +143,16 @@ export default function LandingPage() {
   const prevGalleryImage = () => {
     setCurrentGalleryIndex(
       (prev) => (prev - 1 + galleryImages.length) % galleryImages.length,
+    );
+  };
+
+  const nextSchedule = () => {
+    setCurrentScheduleIndex((prev) => (prev + 1) % scheduleImages.length);
+  };
+
+  const prevSchedule = () => {
+    setCurrentScheduleIndex(
+      (prev) => (prev - 1 + scheduleImages.length) % scheduleImages.length,
     );
   };
 
@@ -235,7 +268,7 @@ export default function LandingPage() {
             <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
           </div>
 
-          {/* Photo Gallery Section - NEW */}
+          {/* Photo Gallery Section */}
           <div className="mb-8 sm:mb-12 max-w-5xl mx-auto">
             <h3 className="text-2xl sm:text-3xl font-black text-white text-center mb-4 sm:mb-6 drop-shadow-lg flex items-center justify-center gap-3">
               <span className="text-3xl sm:text-4xl">📸</span>
@@ -373,28 +406,83 @@ export default function LandingPage() {
             </div>
           )}
 
-          {/* Program Schedule Section */}
+          {/* Program Schedule Section - UPDATED WITH CAROUSEL */}
           <div className="mb-6 sm:mb-8 max-w-5xl mx-auto">
-            <h3 className="text-2xl sm:text-3xl font-bold text-white text-center mb-4 sm:mb-6 drop-shadow-lg flex items-center justify-center gap-3">
+            <h3 className="text-2xl sm:text-3xl font-black text-white text-center mb-4 sm:mb-6 drop-shadow-lg flex items-center justify-center gap-3">
               <span className="text-3xl sm:text-4xl">🎭</span>
               Programación de Comparsas
               <span className="text-3xl sm:text-4xl">🎉</span>
             </h3>
 
-            {/* Full Schedule Image */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl hover:shadow-3xl transition-all">
-              <Image
-                src="/img/cronograma.jpg"
-                alt="Cronograma Carnavales Makallé 2026"
-                width={1200}
-                height={1400}
-                className="w-full h-auto rounded-xl"
-                quality={90}
-              />
+            {/* Schedule Carousel */}
+            <div className="relative mb-6">
+              <div className="bg-white/95 backdrop-blur-sm rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl">
+                {/* Day selector tabs */}
+                <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+                  {scheduleImages.map((schedule, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentScheduleIndex(idx)}
+                      className={`flex-shrink-0 px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all ${
+                        idx === currentScheduleIndex
+                          ? "bg-gradient-to-r from-pink-500 to-orange-500 text-white shadow-lg"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {schedule.day}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Schedule Image Display */}
+                <div className="relative">
+                  <div className="relative rounded-xl overflow-hidden">
+                    {scheduleImages.map((schedule, idx) => (
+                      <div
+                        key={idx}
+                        className={`transition-opacity duration-500 ${
+                          idx === currentScheduleIndex
+                            ? "opacity-100"
+                            : "opacity-0 absolute inset-0"
+                        }`}
+                      >
+                        <Image
+                          src={schedule.src}
+                          alt={schedule.alt}
+                          width={1200}
+                          height={1400}
+                          className="w-full h-auto rounded-xl"
+                          quality={90}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Navigation Arrows for Schedule */}
+                  {scheduleImages.length > 1 && (
+                    <>
+                      <button
+                        onClick={prevSchedule}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+                        aria-label="Día anterior"
+                      >
+                        <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-900" />
+                      </button>
+                      <button
+                        onClick={nextSchedule}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+                        aria-label="Día siguiente"
+                      >
+                        <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-gray-900" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Quick Info Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mt-4 sm:mt-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <div className="bg-gradient-to-br from-pink-500 to-red-500 rounded-xl p-4 text-white shadow-lg">
                 <div className="text-2xl mb-2">🎭</div>
                 <div className="font-bold text-sm sm:text-base mb-1">
