@@ -61,10 +61,10 @@ export default function ValidatePage() {
   }, [status, router]);
 
   // 🆕 Función para formatear fecha/hora
-  const formatValidationTime = (dateString?: Date | string) => {
-    if (!dateString) return null;
+  const formatValidationTime = (dateInput?: Date | string) => {
+    if (!dateInput) return null;
 
-    const date = new Date(dateString);
+    const date = new Date(dateInput);
 
     // Verificar si la fecha es válida
     if (isNaN(date.getTime())) return null;
@@ -82,13 +82,13 @@ export default function ValidatePage() {
       return `Hoy a las ${timeString}`;
     }
 
-    const dateString = date.toLocaleDateString("es-AR", {
+    const dateFormatted = date.toLocaleDateString("es-AR", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
     });
 
-    return `${dateString} a las ${timeString}`;
+    return `${dateFormatted} a las ${timeString}`;
   };
 
   async function validateCode(code: string) {
