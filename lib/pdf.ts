@@ -25,7 +25,6 @@ export async function generateTicketsPdf(params: {
 }): Promise<Buffer> {
   const {
     eventName,
-    eventDate,
     eventLocation,
     orderNumber,
     buyerName,
@@ -75,17 +74,9 @@ export async function generateTicketsPdf(params: {
       },
     );
 
-    page.drawText(safeText(`Fecha: ${eventDate}`), {
-      x: margin,
-      y: top - 70,
-      size: 11,
-      font,
-      color: rgb(0.25, 0.25, 0.25),
-    });
-
     page.drawText(safeText(`Lugar: ${eventLocation}`), {
       x: margin,
-      y: top - 86,
+      y: top - 70,
       size: 11,
       font,
       color: rgb(0.25, 0.25, 0.25),
@@ -94,7 +85,7 @@ export async function generateTicketsPdf(params: {
     // Badge entrada
     page.drawText(safeText(`ENTRADA #${i + 1} de ${tickets.length}`), {
       x: margin,
-      y: top - 120,
+      y: top - 104,
       size: 12,
       font,
       color: rgb(0.55, 0.1, 0.45),
@@ -147,7 +138,9 @@ export async function generateTicketsPdf(params: {
 
     // mini footer
     page.drawText(
-      safeText("Mostra este QR en el ingreso. Cada entrada se usa una sola vez."),
+      safeText(
+        "Mostra este QR en el ingreso. Cada entrada se usa una sola vez.",
+      ),
       {
         x: margin,
         y: 40,
