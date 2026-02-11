@@ -59,7 +59,11 @@ export function middleware(request: NextRequest) {
     "/checkout",
     "/admin/login",
     "/operador/login",
-    "/api",
+    "/api/config",
+    "/api/mercadopago/webhook",
+    "/api/unicobros/webhook",
+    "/api/tickets/download",
+    "/api/tickets/validate",
   ];
 
   const response = NextResponse.next();
