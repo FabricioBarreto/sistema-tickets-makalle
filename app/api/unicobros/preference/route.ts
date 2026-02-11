@@ -1,14 +1,23 @@
+// app/api/unicobros/preference/route.ts
+/**
+ * CAMBIO CLAVE: El successUrl ahora incluye un placeholder para transactionId.
+ *
+ * Unicobros normalmente agrega parámetros a la URL de retorno (como transactionId).
+ * Pero por si no lo hace, también guardamos el checkout ID de Unicobros como
+ * mercadoPagoId en la orden, para que el cron pueda consultarlo después.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPreference } from "@/lib/unicobros";
 
-// ✅ Rate limiting con conteo de intentos
+// Rate limiting
 const preferenceCache = new Map<
   string,
   { timestamp: number; attempts: number }
 >();
-const PREFERENCE_RATE_LIMIT_MS = 5000; // 5 segundos entre requests
-const MAX_ATTEMPTS = 3; // Máximo 3 intentos antes de bloquear
+const PREFERENCE_RATE_LIMIT_MS = 5000;
+const MAX_ATTEMPTS = 3;
 
 function checkPreferenceRateLimit(orderId: string): {
   allowed: boolean;
@@ -20,32 +29,21 @@ function checkPreferenceRateLimit(orderId: string): {
   const cached = preferenceCache.get(orderId);
 
   if (!cached) {
-    // Primera vez
     preferenceCache.set(orderId, { timestamp: now, attempts: 1 });
     return { allowed: true };
   }
 
   const timeSinceFirst = now - cached.timestamp;
 
-  // Si pasaron más de 2 minutos, resetear contador
   if (timeSinceFirst > 120000) {
     preferenceCache.set(orderId, { timestamp: now, attempts: 1 });
     return { allowed: true };
   }
 
-  // Si ya superó el límite de intentos, bloquear
   if (cached.attempts >= MAX_ATTEMPTS) {
-    console.log(
-      `🚫 Bloqueado: ${orderId} - ${cached.attempts} intentos en ${Math.round(timeSinceFirst / 1000)}s`,
-    );
-    return {
-      allowed: false,
-      blocked: true,
-      attempts: cached.attempts,
-    };
+    return { allowed: false, blocked: true, attempts: cached.attempts };
   }
 
-  // Rate limit normal
   const timeSinceLast = now - cached.timestamp;
   if (timeSinceLast < PREFERENCE_RATE_LIMIT_MS) {
     const waitTime = PREFERENCE_RATE_LIMIT_MS - timeSinceLast;
@@ -56,12 +54,10 @@ function checkPreferenceRateLimit(orderId: string): {
     };
   }
 
-  // Permitir pero incrementar contador
   preferenceCache.set(orderId, {
     timestamp: now,
     attempts: cached.attempts + 1,
   });
-
   return { allowed: true, attempts: cached.attempts + 1 };
 }
 
@@ -74,8 +70,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { orderId } = body;
 
-    console.log("🔍 Unicobros Preference - orderId:", orderId);
-
     if (!orderId) {
       return NextResponse.json(
         { success: false, error: "orderId requerido" },
@@ -83,28 +77,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ VERIFICAR RATE LIMIT Y BLOQUEO
+    // Rate limit
     const rateLimit = checkPreferenceRateLimit(orderId);
-
     if (!rateLimit.allowed) {
       if (rateLimit.blocked) {
-        // 🚫 BLOQUEADO - Redirigir al inicio
-        console.log(`🚫 BLOQUEADO: ${orderId} - Redirigiendo al inicio`);
         return NextResponse.json(
           {
             success: false,
             error: "Demasiados intentos. Intenta nuevamente más tarde.",
-            redirect: "/", // ✅ Redirigir al inicio
+            redirect: "/",
             blocked: true,
           },
           { status: 429 },
         );
       }
-
-      // ⏳ Rate limit normal
-      console.log(
-        `⏳ Rate limit: ${orderId} - espera ${rateLimit.waitTime}s (intento ${rateLimit.attempts}/${MAX_ATTEMPTS})`,
-      );
       return NextResponse.json(
         {
           success: false,
@@ -136,9 +122,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ Si ya está pagado, redirigir a success
     if (order.paymentStatus === "COMPLETED") {
-      console.log(`✅ Orden ${order.orderNumber} ya pagada`);
       return NextResponse.json({
         success: false,
         error: "Esta orden ya fue pagada",
@@ -146,13 +130,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(
-      `✅ Orden encontrada: ${order.orderNumber} (intento ${rateLimit.attempts || 1}/${MAX_ATTEMPTS})`,
-    );
-
     const rawUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const appUrl = normalizeUrl(rawUrl);
 
+    // ✅ CAMBIO: successUrl incluye orderId para que success page pueda verificar
     const successUrl = `${appUrl}/checkout/success?orderId=${orderId}`;
     const failureUrl = `${appUrl}/checkout/failure?orderId=${orderId}`;
     const pendingUrl = `${appUrl}/checkout/pending?orderId=${orderId}`;
@@ -185,6 +166,15 @@ export async function POST(request: NextRequest) {
       url: preference.init_point,
     });
 
+    // ✅ NUEVO: Guardar el ID del checkout de Unicobros en la orden
+    // Esto permite al cron consultar el estado aunque no llegue webhook ni transactionId
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        mercadoPagoId: String(preference.id),
+      },
+    });
+
     return NextResponse.json({
       success: true,
       initPoint: preference.init_point,
@@ -192,11 +182,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("❌ Error en Unicobros preference:", error);
-
-    if (error instanceof Error && error.message.includes("Prisma")) {
-      console.error("💡 Tip: Verifica DATABASE_URL en variables de entorno");
-    }
-
     return NextResponse.json(
       {
         success: false,

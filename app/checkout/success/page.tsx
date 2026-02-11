@@ -1,6 +1,7 @@
+// app/checkout/success/page.tsx
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -10,6 +11,8 @@ import {
   Loader2,
   Clock,
   FileText,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 
 interface Order {
@@ -20,7 +23,7 @@ interface Order {
   buyerPhone?: string;
   totalAmount: number;
   paymentStatus: string;
-  downloadToken?: string; // 👈 TOKEN DE DESCARGA
+  downloadToken?: string;
 }
 
 // Helpers WhatsApp
@@ -41,58 +44,169 @@ function SuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const orderId = searchParams.get("orderId");
+  const transactionId =
+    searchParams.get("transactionId") ||
+    searchParams.get("transaction_id") ||
+    searchParams.get("id");
+
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [paymentStatus, setPaymentStatus] = useState<string>("PENDING");
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null); // 👈 URL DE DESCARGA
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [confirmAttempts, setConfirmAttempts] = useState(0);
+  const [statusMessage, setStatusMessage] = useState<string>(
+    "Verificando tu pago...",
+  );
+
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const maxAttempts = 40; // 40 intentos × 3s = 2 minutos
 
   useEffect(() => {
-    if (orderId) {
-      fetchOrder();
-      const interval = setInterval(fetchOrder, 3000);
-      const timeout = setTimeout(() => clearInterval(interval), 120000);
-      return () => {
-        clearInterval(interval);
-        clearTimeout(timeout);
-      };
-    }
+    if (!orderId) return;
+
+    // Llamada inicial inmediata
+    verifyPayment();
+
+    // Polling cada 3 segundos
+    intervalRef.current = setInterval(verifyPayment, 3000);
+
+    // Timeout de seguridad: parar después de 2 minutos
+    const timeout = setTimeout(() => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    }, 120000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      clearTimeout(timeout);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
-  const fetchOrder = async () => {
+  const verifyPayment = async () => {
+    try {
+      setConfirmAttempts((prev) => prev + 1);
+
+      // 1. Llamar al endpoint de confirmación (intenta verificar con Unicobros)
+      const confirmParams = new URLSearchParams({ orderId: orderId! });
+      if (transactionId) {
+        confirmParams.set("transactionId", transactionId);
+      }
+
+      const confirmRes = await fetch(`/api/unicobros/confirm?${confirmParams}`);
+      const confirmData = await confirmRes.json();
+
+      if (confirmData.success && confirmData.status === "COMPLETED") {
+        // ¡Pago confirmado!
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setPaymentStatus("COMPLETED");
+        setLoading(false);
+
+        if (confirmData.downloadToken) {
+          setDownloadUrl(`/api/tickets/download/${confirmData.downloadToken}`);
+        }
+
+        // Cargar datos completos de la orden para mostrar
+        await fetchOrderDetails();
+        return;
+      }
+
+      if (confirmData.status === "FAILED") {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setPaymentStatus("FAILED");
+        setStatusMessage("El pago fue rechazado");
+        setLoading(false);
+        return;
+      }
+
+      // 2. Si confirm no resolvió, también consultar el estado de la orden directamente
+      const orderRes = await fetch(`/api/orders/${orderId}`);
+      const orderData = await orderRes.json();
+
+      if (orderData.success) {
+        setOrder(orderData.data);
+
+        if (orderData.data.paymentStatus === "COMPLETED") {
+          // Confirmado por webhook mientras tanto
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          setPaymentStatus("COMPLETED");
+          setLoading(false);
+
+          if (orderData.data.downloadToken) {
+            setDownloadUrl(
+              `/api/tickets/download/${orderData.data.downloadToken}`,
+            );
+          }
+          return;
+        }
+      }
+
+      // Actualizar mensaje según intentos
+      if (confirmAttempts > 10) {
+        setStatusMessage("Seguimos verificando tu pago con Unicobros...");
+      }
+      if (confirmAttempts > 20) {
+        setStatusMessage(
+          "Esto está tardando más de lo normal. No cierres esta página.",
+        );
+      }
+
+      // Si llegamos al máximo de intentos, parar el polling
+      if (confirmAttempts >= maxAttempts) {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Error verificando pago:", error);
+    } finally {
+      if (loading && confirmAttempts >= 3) {
+        // Dejar de mostrar spinner después de unos intentos
+        // pero seguir verificando en background
+        setLoading(false);
+      }
+    }
+  };
+
+  const fetchOrderDetails = async () => {
     try {
       const res = await fetch(`/api/orders/${orderId}`);
       const data = await res.json();
       if (data.success) {
         setOrder(data.data);
-        setPaymentStatus(data.data.paymentStatus);
-
-        // 👇 GENERAR URL DE DESCARGA
         if (
           data.data.downloadToken &&
           data.data.paymentStatus === "COMPLETED"
         ) {
-          // Usar ruta relativa (funciona en dev y producción)
           setDownloadUrl(`/api/tickets/download/${data.data.downloadToken}`);
-        }
-
-        if (data.data.paymentStatus === "COMPLETED") {
-          setLoading(false);
         }
       }
     } catch (error) {
       console.error("Error fetching order:", error);
-    } finally {
-      if (loading) setLoading(false);
     }
   };
 
+  // ─── Retry manual ───
+  const handleManualRetry = async () => {
+    setLoading(true);
+    setConfirmAttempts(0);
+    setStatusMessage("Verificando tu pago...");
+
+    // Reiniciar polling
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    await verifyPayment();
+    intervalRef.current = setInterval(verifyPayment, 3000);
+
+    setTimeout(() => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    }, 60000);
+  };
+
+  // ─── LOADING STATE ───
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
-        <div className="text-center">
+        <div className="text-center max-w-md">
           <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4" />
-          <p className="text-gray-600 text-lg">Verificando tu pago...</p>
+          <p className="text-gray-600 text-lg">{statusMessage}</p>
           <p className="text-gray-500 text-sm mt-2">
             Esto puede tomar unos segundos
           </p>
@@ -101,34 +215,22 @@ function SuccessContent() {
     );
   }
 
-  if (paymentStatus === "PENDING") {
+  // ─── FAILED STATE ───
+  if (paymentStatus === "FAILED") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-orange-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
         <div className="max-w-2xl w-full bg-white rounded-3xl shadow-2xl p-8 md:p-12 text-center">
           <div className="flex justify-center mb-6">
-            <div className="bg-yellow-100 rounded-full p-6">
-              <Clock className="w-20 h-20 text-yellow-600 animate-pulse" />
+            <div className="bg-red-100 rounded-full p-6">
+              <AlertTriangle className="w-20 h-20 text-red-600" />
             </div>
           </div>
-
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-            Pago en Proceso
+            Pago Rechazado
           </h1>
-
           <p className="text-lg text-gray-600 mb-8">
-            Tu pago está siendo procesado. Te notificaremos por email cuando se
-            confirme.
+            Tu pago no pudo ser procesado. Podés intentar nuevamente.
           </p>
-
-          {order && (
-            <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 mb-8">
-              <p className="text-sm text-yellow-800">
-                Número de Orden:{" "}
-                <span className="font-bold">{order.orderNumber}</span>
-              </p>
-            </div>
-          )}
-
           <button
             onClick={() => router.push("/")}
             className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 mx-auto"
@@ -141,19 +243,72 @@ function SuccessContent() {
     );
   }
 
-  // Pago completado
+  // ─── PENDING STATE (timeout) ───
+  if (paymentStatus === "PENDING") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-orange-50 flex items-center justify-center p-4">
+        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-2xl p-8 md:p-12 text-center">
+          <div className="flex justify-center mb-6">
+            <div className="bg-yellow-100 rounded-full p-6">
+              <Clock className="w-20 h-20 text-yellow-600" />
+            </div>
+          </div>
+
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            Pago en Proceso
+          </h1>
+
+          <p className="text-lg text-gray-600 mb-4">
+            Tu pago está siendo procesado. Puede demorar unos minutos en
+            confirmarse.
+          </p>
+          <p className="text-md text-gray-500 mb-8">
+            Te notificaremos por email a <strong>{order?.buyerEmail}</strong>{" "}
+            cuando se confirme.
+          </p>
+
+          {order && (
+            <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 mb-8">
+              <p className="text-sm text-yellow-800">
+                Número de Orden:{" "}
+                <span className="font-bold">{order.orderNumber}</span>
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <button
+              onClick={handleManualRetry}
+              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-5 h-5" />
+              Verificar nuevamente
+            </button>
+            <button
+              onClick={() => router.push("/")}
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+            >
+              <Home className="w-5 h-5" />
+              Volver al inicio
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-500 mt-6">
+            Si ya pagaste y no se confirma, contactanos a
+            fabriciobarreto2610@gmail.com o al 3734-469110
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── COMPLETED STATE ───
   const waPhoneDigits = order?.buyerPhone
     ? normalizePhoneForWhatsApp(order.buyerPhone)
     : null;
 
   const waMessage = order
-    ? `Hola ${order.buyerName}! 👋
-Tu compra fue exitosa ✅
-Orden: ${order.orderNumber}
-Entradas: ${order.quantity}
-
-Te envié las entradas en PDF al email: ${order.buyerEmail}
-Si no te llegó, avisame por acá y te lo reenvío.`
+    ? `Hola ${order.buyerName}! 👋\nTu compra fue exitosa ✅\nOrden: ${order.orderNumber}\nEntradas: ${order.quantity}\n\nTe envié las entradas en PDF al email: ${order.buyerEmail}\nSi no te llegó, avisame por acá y te lo reenvío.`
     : "Hola! Necesito ayuda con mi compra de entradas.";
 
   const waLink = waPhoneDigits ? buildWaMeLink(waPhoneDigits, waMessage) : null;
@@ -169,7 +324,6 @@ Si no te llegó, avisame por acá y te lo reenvío.`
             </div>
           </div>
 
-          {/* Title */}
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
             ¡Compra Exitosa!
           </h1>
@@ -206,7 +360,7 @@ Si no te llegó, avisame por acá y te lo reenvío.`
             </div>
           )}
 
-          {/* 👇 BOTÓN DE DESCARGA DEL PDF */}
+          {/* Botón de descarga del PDF */}
           {downloadUrl && (
             <div className="mb-6">
               <a
@@ -251,7 +405,6 @@ Si no te llegó, avisame por acá y te lo reenvío.`
             </button>
           </div>
 
-          {/* Help Text */}
           <p className="text-sm text-gray-500 mt-6">
             ¿Problemas? Contactanos a fabriciobarreto2610@gmail.com o al
             teléfono 3734-469110
