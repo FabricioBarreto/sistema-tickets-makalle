@@ -5,6 +5,23 @@ import type { NextRequest } from "next/server";
 export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
+  // ✅ BLOQUEO POR HOST: evita que entren por *.vercel.app (bypass de Cloudflare)
+  const host = request.headers.get("host") || "";
+  const allowedHosts = new Set([
+    "makalleeventos.com",
+    "www.makalleeventos.com",
+  ]);
+
+  // Si querés permitir localhost en dev, descomentá:
+  // allowedHosts.add("localhost:3000");
+
+  if (!allowedHosts.has(host)) {
+    return new NextResponse("Forbidden", {
+      status: 403,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
   // ✅ FIREWALL: Bloquear bots ANTES de cualquier lógica
   const userAgent = request.headers.get("user-agent") || "";
 
