@@ -69,31 +69,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ SEGURIDAD 1: Bloquear bots y scripts automatizados
-    const userAgent = req.headers.get("user-agent") || "";
-    const suspiciousAgents = [
-      "python-requests",
-      "curl",
-      "wget",
-      "postman",
-      "insomnia",
-      "bot",
-      "crawler",
-      "spider",
-    ];
-
-    if (
-      process.env.NODE_ENV === "production" &&
-      suspiciousAgents.some((agent) => userAgent.toLowerCase().includes(agent))
-    ) {
-      console.log(`⛔ Blocked suspicious user agent: ${userAgent}`);
-      return NextResponse.json(
-        { success: false, error: "Acceso no autorizado" },
-        { status: 403 },
-      );
-    }
-
-    // ✅ SEGURIDAD 2: Bloquear emails de prueba en producción
+    // ✅ SEGURIDAD 1: Bloquear emails de prueba en producción
     if (process.env.NODE_ENV === "production") {
       const testDomains = [
         "@example.com",
@@ -111,7 +87,7 @@ export async function POST(req: NextRequest) {
       );
 
       if (isTestEmail) {
-        console.log(`⛔ Blocked test email in production: ${buyerEmail}`);
+        console.log(`⛔ Blocked test email: ${buyerEmail}`);
         return NextResponse.json(
           {
             success: false,
@@ -123,7 +99,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ✅ SEGURIDAD 3: Validar formato de email
+    // ✅ SEGURIDAD 2: Validar formato de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(buyerEmail)) {
       return NextResponse.json(
@@ -132,7 +108,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ SEGURIDAD 4: Validar longitud de nombre
+    // ✅ SEGURIDAD 3: Validar longitud de nombre
     if (buyerName.length < 3 || buyerName.length > 100) {
       return NextResponse.json(
         { success: false, error: "Nombre inválido" },
@@ -140,6 +116,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ✅ SEGURIDAD 4: Validar cantidad
     if (quantity < 1 || quantity > 50) {
       return NextResponse.json(
         { success: false, error: "Cantidad inválida" },
