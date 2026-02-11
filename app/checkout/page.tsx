@@ -1,7 +1,7 @@
-// app/checkout/page.tsx (SIN DNI)
+// app/checkout/page.tsx
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
 import { formatCurrency, isValidEmail, isValidPhone } from "@/lib/utils";
@@ -22,9 +22,12 @@ function CheckoutContent() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // ✅ Protección anti-duplicados
+  const isProcessingRef = useRef(false);
+  const lastSubmitTimeRef = useRef(0);
+
   const totalAmount = ticketPrice * quantity;
 
-  // ✅ Cargar configuración real al montar
   useEffect(() => {
     loadConfig();
   }, []);
@@ -35,14 +38,14 @@ function CheckoutContent() {
       const text = await res.text();
       const data = text ? JSON.parse(text) : null;
 
-      console.log("🔍 Response config:", data); // DEBUG
+      console.log("🔍 Response config:", data);
 
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "No se pudo cargar la configuración");
       }
 
       const price = Number(data.data.ticketPrice || 0);
-      console.log("💰 Precio cargado:", price); // DEBUG
+      console.log("💰 Precio cargado:", price);
       setTicketPrice(price);
     } catch (error: unknown) {
       console.error("❌ Error cargando config:", error);
@@ -83,15 +86,37 @@ function CheckoutContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // ✅ PROTECCIÓN 1: Evitar doble click
+    if (isProcessingRef.current) {
+      console.log("⏳ Ya estamos procesando una compra, espera...");
+      toast.warning("Ya estamos procesando tu compra, por favor espera");
+      return;
+    }
+
+    // ✅ PROTECCIÓN 2: Rate limiting (5 segundos entre intentos)
+    const now = Date.now();
+    const timeSinceLastSubmit = now - lastSubmitTimeRef.current;
+    if (timeSinceLastSubmit < 5000) {
+      const waitTime = Math.ceil((5000 - timeSinceLastSubmit) / 1000);
+      console.log(
+        `⏳ Espera ${waitTime} segundos antes de intentar nuevamente`,
+      );
+      toast.warning(`Espera ${waitTime} segundos antes de intentar nuevamente`);
+      return;
+    }
+
     if (!validateForm()) {
       toast.error("Por favor completá todos los campos correctamente");
       return;
     }
 
+    // Marcar como procesando
+    isProcessingRef.current = true;
+    lastSubmitTimeRef.current = now;
     setLoading(true);
 
     try {
-      // Normalizar teléfono (agregar +54 si no lo tiene)
+      // Normalizar teléfono
       let phone = formData.buyerPhone.replace(/[^0-9+]/g, "");
       if (!phone.startsWith("+")) {
         phone = "+54" + phone;
@@ -105,7 +130,7 @@ function CheckoutContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
-          buyerPhone: phone, // 👈 Usar teléfono normalizado
+          buyerPhone: phone,
           quantity,
         }),
       });
@@ -138,14 +163,20 @@ function CheckoutContent() {
       });
 
       const mpText = await mpRes.text();
-      console.log("💳 MP Response texto:", mpText);
+      console.log("💳 Response texto:", mpText);
 
       if (!mpRes.ok) {
-        throw new Error(`Error MP (${mpRes.status}): ${mpText}`);
+        // Si es 429 (rate limit), mostrar mensaje específico
+        if (mpRes.status === 429) {
+          throw new Error(
+            "Por favor espera unos segundos antes de intentar nuevamente",
+          );
+        }
+        throw new Error(`Error al crear el pago (${mpRes.status}): ${mpText}`);
       }
 
       const mpData = mpText ? JSON.parse(mpText) : null;
-      console.log("💳 MP Data parseado:", mpData);
+      console.log("💳 Data parseado:", mpData);
 
       if (!mpData?.success) {
         throw new Error(
@@ -154,26 +185,35 @@ function CheckoutContent() {
       }
 
       if (!mpData.initPoint) {
-        console.error("❌ MP Data completo:", JSON.stringify(mpData, null, 2));
+        console.error("❌ Data completo:", JSON.stringify(mpData, null, 2));
         throw new Error("No se recibió el link de pago de Unicobros");
       }
 
       console.log("✅ Redirigiendo a:", mpData.initPoint);
 
-      // 3) Redirigir a Unicobros
-      window.location.href = mpData.initPoint;
+      // 3) Mostrar mensaje de redirección
+      toast.success("Redirigiendo al pago...", { duration: 2000 });
+
+      // 4) Redirigir después de un breve delay
+      setTimeout(() => {
+        window.location.href = mpData.initPoint;
+      }, 500);
     } catch (error: unknown) {
       console.error("❌ Error completo:", error);
+
+      // Liberar el lock en caso de error
+      isProcessingRef.current = false;
+      setLoading(false);
+
       if (error instanceof Error) {
         toast.error(error.message || "Error al procesar la compra");
       } else {
         toast.error("Error al procesar la compra");
       }
-      setLoading(false);
     }
+    // NO liberamos isProcessingRef aquí porque ya estamos redirigiendo
   };
 
-  // ✅ Mostrar loader mientras carga config
   if (loadingConfig) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -192,7 +232,8 @@ function CheckoutContent() {
         <div className="max-w-4xl mx-auto px-4 py-4">
           <button
             onClick={() => router.back()}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+            disabled={loading}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ArrowLeft className="w-5 h-5" />
             Volver
@@ -223,8 +264,9 @@ function CheckoutContent() {
                     name="buyerName"
                     value={formData.buyerName}
                     onChange={handleChange}
+                    disabled={loading}
                     placeholder="Juan Pérez"
-                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed ${
                       errors.buyerName ? "border-red-500" : "border-gray-300"
                     }`}
                   />
@@ -245,8 +287,9 @@ function CheckoutContent() {
                     name="buyerEmail"
                     value={formData.buyerEmail}
                     onChange={handleChange}
+                    disabled={loading}
                     placeholder="juan@ejemplo.com"
-                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed ${
                       errors.buyerEmail ? "border-red-500" : "border-gray-300"
                     }`}
                   />
@@ -270,8 +313,9 @@ function CheckoutContent() {
                     name="buyerPhone"
                     value={formData.buyerPhone}
                     onChange={handleChange}
+                    disabled={loading}
                     placeholder="+54 9 362 123-4567"
-                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed ${
                       errors.buyerPhone ? "border-red-500" : "border-gray-300"
                     }`}
                   />
@@ -301,7 +345,7 @@ function CheckoutContent() {
                   )}
                 </button>
 
-                {/* ⚠️ AVISO IMPORTANTE */}
+                {/* Aviso */}
                 <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-lg">
                   <div className="flex items-start gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -319,8 +363,8 @@ function CheckoutContent() {
                 </div>
 
                 <p className="text-sm text-gray-500 text-center">
-                  Al continuar, serás redirigido a Unicobros para completar
-                  el pago de forma segura
+                  Al continuar, serás redirigido a Unicobros para completar el
+                  pago de forma segura
                 </p>
               </form>
             </div>
@@ -360,8 +404,8 @@ function CheckoutContent() {
                   Pago 100% seguro
                 </h3>
                 <p className="text-sm text-blue-800">
-                  Tu pago es procesado de forma segura por Unicobros.
-                  Aceptamos todas las tarjetas de crédito y débito.
+                  Tu pago es procesado de forma segura por Unicobros. Aceptamos
+                  todas las tarjetas de crédito y débito.
                 </p>
               </div>
 
@@ -375,7 +419,6 @@ function CheckoutContent() {
                 </p>
               </div>
 
-              {/* ⚠️ AVISO IMPORTANTE - En el resumen (siempre visible) */}
               <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-lg">
                 <h3 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
