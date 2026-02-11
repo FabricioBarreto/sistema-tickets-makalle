@@ -88,6 +88,10 @@ function SuccessContent() {
 
       // 1. Llamar al endpoint de confirmación (intenta verificar con Unicobros)
       const confirmParams = new URLSearchParams({ orderId: orderId! });
+
+      const status = searchParams.get("status") || searchParams.get("code");
+      if (status) confirmParams.set("status", status);
+
       if (transactionId) {
         confirmParams.set("transactionId", transactionId);
       }
