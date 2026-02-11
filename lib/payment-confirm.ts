@@ -6,7 +6,7 @@
  * Principios:
  * - Idempotente: si la orden ya está COMPLETED, no hace nada.
  * - Transaccional: Order + Tickets se actualizan juntos.
- * - Anti-downgrade: nunca pasa de COMPLETED a otro estado.
+ * - Anti-downgrade: nunca pasa de COMPLETED a otro estado (cubierto por paso 4).
  * - Genera downloadToken si no existe.
  * - Envía notificaciones (email/whatsapp) solo la primera vez.
  */
@@ -100,20 +100,9 @@ export async function confirmPayment(
     return { success: false, error: "Orden sin tickets" };
   }
 
-  // 4. IDEMPOTENCIA: Si ya está COMPLETED, no hacer nada
+  // 4. IDEMPOTENCIA + ANTI-DOWNGRADE: Si ya está COMPLETED, no hacer nada
   if (order.paymentStatus === "COMPLETED") {
     console.log(`${logPrefix} ✅ Ya procesada: ${order.orderNumber}`);
-    processedCache.set(cacheKey, now);
-    return {
-      success: true,
-      alreadyProcessed: true,
-      orderNumber: order.orderNumber,
-    };
-  }
-
-  // 5. Anti-downgrade: nunca pasar de COMPLETED a otro estado
-  if (order.paymentStatus === "COMPLETED" && paymentStatus !== "COMPLETED") {
-    console.log(`${logPrefix} 🛡️ Anti-downgrade: ${order.orderNumber}`);
     processedCache.set(cacheKey, now);
     return {
       success: true,
@@ -126,14 +115,14 @@ export async function confirmPayment(
     `${logPrefix} 🔔 Confirmando pago: ${order.orderNumber} | paymentId=${paymentId} | status=${statusNum}`,
   );
 
-  // 6. Generar downloadToken si no existe
+  // 5. Generar downloadToken si no existe
   const downloadToken = order.downloadToken || generateDownloadToken();
 
-  // 7. Marcar cache ANTES de escribir en DB (previene race conditions)
+  // 6. Marcar cache ANTES de escribir en DB (previene race conditions)
   processedCache.set(cacheKey, now);
   cleanCache();
 
-  // 8. Actualizar Order + Tickets en una transacción
+  // 7. Actualizar Order + Tickets en una transacción
   await prisma.$transaction([
     prisma.order.update({
       where: { id: order.id },
@@ -152,7 +141,7 @@ export async function confirmPayment(
 
   console.log(`${logPrefix} ✅ Orden actualizada: ${order.orderNumber}`);
 
-  // 9. Enviar notificaciones (best-effort, no falla si hay error)
+  // 8. Enviar notificaciones (best-effort, no falla si hay error)
   const { emailSent, whatsappSent } = await sendNotifications({
     order,
     downloadToken,

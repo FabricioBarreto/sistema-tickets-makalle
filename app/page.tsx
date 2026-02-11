@@ -93,7 +93,7 @@ export default function LandingPage() {
     try {
       const res = await fetch("/api/config", { cache: "no-store" });
 
-      let data: Record<string, unknown> | null = null;
+      let data: { success?: boolean; data?: SystemConfig } | null = null;
       try {
         data = await res.json();
       } catch {
@@ -111,19 +111,23 @@ export default function LandingPage() {
         return;
       }
 
-      setConfig(data.data);
+      setConfig(data.data ?? null);
 
       // eventDates puede no existir; ok
       let dates: EventDate[] = [];
+
       try {
-        if (typeof data.data.eventDates === "string") {
-          dates = JSON.parse(data.data.eventDates);
-        } else if (Array.isArray(data.data.eventDates)) {
-          dates = data.data.eventDates;
+        const eventDatesRaw = data?.data?.eventDates;
+
+        if (typeof eventDatesRaw === "string") {
+          dates = JSON.parse(eventDatesRaw);
+        } else if (Array.isArray(eventDatesRaw)) {
+          dates = eventDatesRaw;
         }
-      } catch (e) {
-        console.error("Error parsing eventDates:", e);
+      } catch (error) {
+        console.error("Error parsing eventDates:", error);
       }
+
       setEventDates(dates);
 
       setLoading(false);

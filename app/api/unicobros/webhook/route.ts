@@ -17,9 +17,12 @@ interface WebhookBody {
 }
 
 function parseStatusNum(payment: Record<string, unknown>): number {
+  const status = payment?.status;
   const statusRaw =
-    payment?.status?.code ??
-    payment?.status ??
+    (typeof status === "object" && status !== null && "code" in status
+      ? (status as { code: unknown }).code
+      : null) ??
+    status ??
     payment?.status_code ??
     payment?.code ??
     "0";

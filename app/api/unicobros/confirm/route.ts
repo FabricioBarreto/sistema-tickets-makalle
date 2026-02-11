@@ -216,10 +216,17 @@ export async function GET(request: NextRequest) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function parseStatusFromPayment(payment: Record<string, unknown>): number {
+function parseStatusFromPayment(payment: {
+  status?: unknown;
+  status_code?: unknown;
+  code?: unknown;
+}): number {
+  const status = payment?.status;
   const statusRaw =
-    payment?.status?.code ??
-    payment?.status ??
+    (typeof status === "object" && status !== null && "code" in status
+      ? (status as { code: unknown }).code
+      : null) ??
+    status ??
     payment?.status_code ??
     payment?.code ??
     "0";
