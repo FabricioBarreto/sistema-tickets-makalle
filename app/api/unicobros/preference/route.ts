@@ -2,6 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPreference } from "@/lib/unicobros";
 
+// ✅ Rate limiting para prevenir checkouts duplicados
+const preferenceCache = new Map<string, number>();
+const PREFERENCE_RATE_LIMIT_MS = 5000; // 5 segundos entre requests del mismo orderId
+
+function checkPreferenceRateLimit(orderId: string): {
+  allowed: boolean;
+  waitTime?: number;
+} {
+  const now = Date.now();
+  const lastRequest = preferenceCache.get(orderId);
+
+  if (lastRequest && now - lastRequest < PREFERENCE_RATE_LIMIT_MS) {
+    const waitTime = PREFERENCE_RATE_LIMIT_MS - (now - lastRequest);
+    return { allowed: false, waitTime: Math.ceil(waitTime / 1000) };
+  }
+
+  preferenceCache.set(orderId, now);
+
+  // Limpiar cache viejo (> 1 hora)
+  if (preferenceCache.size > 500) {
+    const oneHourAgo = now - 3600000;
+    for (const [key, time] of preferenceCache.entries()) {
+      if (time < oneHourAgo) preferenceCache.delete(key);
+    }
+  }
+
+  return { allowed: true };
+}
+
 function normalizeUrl(url: string): string {
   return url.replace(/\/+$/, "");
 }
@@ -11,7 +40,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { orderId } = body;
 
-    console.log("🔍 Unicobros Preference - Body recibido:", { orderId });
+    console.log("🔍 Unicobros Preference - orderId:", orderId);
 
     if (!orderId) {
       return NextResponse.json(
@@ -20,6 +49,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ✅ VERIFICAR RATE LIMIT
+    const rateLimit = checkPreferenceRateLimit(orderId);
+    if (!rateLimit.allowed) {
+      console.log(`⏳ Rate limit: ${orderId} - espera ${rateLimit.waitTime}s`);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Espera ${rateLimit.waitTime} segundos antes de intentar nuevamente`,
+        },
+        { status: 429 },
+      );
+    }
+
+    // Buscar orden
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: { tickets: true },
@@ -32,7 +75,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("✅ Orden encontrada:", order.orderNumber);
+    if (!order.tickets || order.tickets.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Orden sin tickets" },
+        { status: 400 },
+      );
+    }
+
+    // ✅ Si ya está pagado, redirigir a success
+    if (order.paymentStatus === "COMPLETED") {
+      console.log(`✅ Orden ${order.orderNumber} ya pagada`);
+      return NextResponse.json({
+        success: false,
+        error: "Esta orden ya fue pagada",
+        redirect: "/checkout/success?orderId=" + orderId,
+      });
+    }
+
+    console.log(`✅ Orden encontrada: ${order.orderNumber}`);
 
     const rawUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const appUrl = normalizeUrl(rawUrl);
@@ -41,6 +101,12 @@ export async function POST(request: NextRequest) {
     const failureUrl = `${appUrl}/checkout/failure?orderId=${orderId}`;
     const pendingUrl = `${appUrl}/checkout/pending?orderId=${orderId}`;
     const notificationUrl = `${appUrl}/api/unicobros/webhook`;
+
+    console.log("🚀 Creando checkout en Unicobros:", {
+      orderId: order.id,
+      amount: Number(order.totalAmount),
+      email: order.buyerEmail,
+    });
 
     const preference = await createPreference({
       orderId: order.id,
@@ -58,9 +124,9 @@ export async function POST(request: NextRequest) {
       notificationUrl,
     });
 
-    console.log("✅ Preferencia Unicobros creada:", {
+    console.log("✅ Checkout creado:", {
       id: preference.id,
-      init_point: preference.init_point,
+      url: preference.init_point,
     });
 
     return NextResponse.json({
@@ -70,6 +136,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("❌ Error en Unicobros preference:", error);
+
+    // Contexto adicional para errores de Prisma
+    if (error instanceof Error && error.message.includes("Prisma")) {
+      console.error("💡 Tip: Verifica DATABASE_URL en variables de entorno");
+      console.error("💡 Tip: Cambia a Transaction Mode en Supabase");
+    }
+
     return NextResponse.json(
       {
         success: false,
