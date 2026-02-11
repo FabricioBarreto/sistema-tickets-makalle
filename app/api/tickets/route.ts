@@ -30,7 +30,7 @@ export async function GET() {
         orderNumber: t.order.orderNumber,
         buyerName: t.order.buyerName,
         buyerEmail: t.order.buyerEmail,
-        buyerDNI: t.order.buyerDNI ?? "", // ✅ Opcional, puede ser vacío
+        buyerDNI: t.order.buyerDNI ?? "",
         quantity: t.order.quantity,
         price: t.order.unitPrice.toString(),
         validated,
@@ -61,12 +61,32 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { buyerName, buyerEmail, buyerPhone, quantity } = body;
 
-    // ✅ DNI ya no es requerido
+    // ✅ Validación básica
     if (!buyerName || !buyerEmail || !quantity) {
       return NextResponse.json(
         { success: false, error: "Faltan datos requeridos" },
         { status: 400 },
       );
+    }
+
+    // ✅ BLOQUEAR EMAILS DE PRUEBA EN PRODUCCIÓN
+    if (process.env.NODE_ENV === "production") {
+      const testDomains = ["@example.com", "@test.com", "@testing.com"];
+      const isTestEmail = testDomains.some((domain) =>
+        buyerEmail.toLowerCase().includes(domain),
+      );
+
+      if (isTestEmail) {
+        console.log(`⛔ Blocked test email in production: ${buyerEmail}`);
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Email de prueba no permitido. Por favor usa un email válido.",
+          },
+          { status: 400 },
+        );
+      }
     }
 
     if (quantity < 1 || quantity > 50) {
@@ -124,7 +144,6 @@ export async function POST(req: NextRequest) {
         buyerName,
         buyerEmail,
         buyerPhone: normalizedPhone,
-        // ✅ buyerDNI se omite completamente
         unitPrice,
         quantity,
         totalAmount,
