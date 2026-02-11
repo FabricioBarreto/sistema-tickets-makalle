@@ -16,7 +16,7 @@ interface WebhookBody {
   };
 }
 
-function parseStatusNum(payment: any): number {
+function parseStatusNum(payment: Record<string, unknown>): number {
   const statusRaw =
     payment?.status?.code ??
     payment?.status ??
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = rawBody as WebhookBody;
-    const payment = body?.data?.payment;
+    const payment = body?.data?.payment as Record<string, unknown> | undefined;
 
     if (!payment || !payment.id) {
       console.log("[webhook] ⏭️ Sin data.payment.id");

@@ -216,7 +216,7 @@ export async function GET(request: NextRequest) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function parseStatusFromPayment(payment: any): number {
+function parseStatusFromPayment(payment: Record<string, unknown>): number {
   const statusRaw =
     payment?.status?.code ??
     payment?.status ??

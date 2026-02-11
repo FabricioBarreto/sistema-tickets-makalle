@@ -192,7 +192,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function parseStatusNum(payment: any): number {
+function parseStatusNum(payment: Record<string, unknown>): number {
   const statusRaw =
     payment?.status?.code ??
     payment?.status ??
