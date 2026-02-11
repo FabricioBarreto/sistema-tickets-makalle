@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
           ? String(transactionId)
           : `RETURN-200-${Date.now()}`,
         statusNum: 200,
-        source: "success_page_return",
+        source: "success_page",
       });
 
       if (!result.success) {
