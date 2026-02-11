@@ -43,7 +43,7 @@ export async function GET() {
         eventName: "Carnaval Makalle 2026",
         eventLocation: "Anfiteatro Municipal",
         eventDate: new Date("2026-02-14T20:00:00"),
-        emailFrom: "noreply@carnaval.com",
+        emailFrom: "fabriciobarreto2610@gmail.com",
         emailEnabled: true,
       },
     });
@@ -80,7 +80,7 @@ export async function PUT(req: NextRequest) {
           eventName: "Carnaval Makalle 2026",
           eventLocation: "Anfiteatro Municipal",
           eventDate: new Date("2026-02-14T20:00:00"),
-          emailFrom: "noreply@carnaval.com",
+          emailFrom: "fabriciobarreto2610@gmail.com",
           emailEnabled: true,
         },
       });

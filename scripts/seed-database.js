@@ -46,7 +46,7 @@ async function seed() {
         eventDate: new Date("2026-02-14T20:00:00.000Z"), // 14 de Febrero 2026, 20:00
         eventName: "Carnavales Makallé 2026",
         eventLocation: "Corsódromo Makallé, Resistencia, Chaco",
-        emailFrom: "noreply@carnaval.com",
+        emailFrom: "fabriciobarreto2610@gmail.com",
         emailEnabled: true,
       },
     });
