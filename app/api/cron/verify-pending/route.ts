@@ -1,15 +1,15 @@
 // app/api/cron/verify-pending/route.ts
 /**
  * Cron job para verificar órdenes pendientes.
- * 
+ *
  * Busca órdenes PENDING con más de 2 minutos de antigüedad
  * y que tengan mercadoPagoId (transactionId), luego consulta
  * la API de Unicobros para verificar su estado.
- * 
+ *
  * Uso:
  *   - Vercel Cron: configurar en vercel.json cada 5 minutos
  *   - Manual: GET /api/cron/verify-pending?secret=TU_CRON_SECRET
- * 
+ *
  * Seguridad:
  *   - Requiere header Authorization o query param ?secret=
  *   - El secret se configura en CRON_SECRET env var
@@ -32,13 +32,12 @@ export async function GET(request: NextRequest) {
       const querySecret = new URL(request.url).searchParams.get("secret");
 
       const isAuthorized =
-        authHeader === `Bearer ${cronSecret}` ||
-        querySecret === cronSecret;
+        authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret;
 
       if (!isAuthorized) {
         return NextResponse.json(
           { success: false, error: "No autorizado" },
-          { status: 401 }
+          { status: 401 },
         );
       }
     }
@@ -53,7 +52,7 @@ export async function GET(request: NextRequest) {
         mercadoPagoId: { not: null },
         createdAt: {
           gte: twentyFourHoursAgo, // No más de 24 horas
-          lte: twoMinutesAgo,      // Al menos 2 minutos
+          lte: twoMinutesAgo, // Al menos 2 minutos
         },
       },
       select: {
@@ -66,7 +65,9 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "asc" }, // Las más viejas primero
     });
 
-    console.log(`[cron] 🔍 Encontradas ${pendingOrders.length} órdenes pendientes`);
+    console.log(
+      `[cron] 🔍 Encontradas ${pendingOrders.length} órdenes pendientes`,
+    );
 
     if (pendingOrders.length === 0) {
       return NextResponse.json({
@@ -89,13 +90,17 @@ export async function GET(request: NextRequest) {
     for (const order of pendingOrders) {
       try {
         const transactionId = order.mercadoPagoId!;
-        console.log(`[cron] 🔍 Verificando: ${order.orderNumber} → ${transactionId}`);
+        console.log(
+          `[cron] 🔍 Verificando: ${order.orderNumber} → ${transactionId}`,
+        );
 
         // Consultar Unicobros
         const paymentResult = await getPaymentStatus(transactionId);
 
         if (!paymentResult.success || !paymentResult.payment) {
-          console.log(`[cron] ⚠️ No se pudo consultar: ${order.orderNumber} - ${paymentResult.error}`);
+          console.log(
+            `[cron] ⚠️ No se pudo consultar: ${order.orderNumber} - ${paymentResult.error}`,
+          );
           results.push({
             orderNumber: order.orderNumber,
             status: "error",
@@ -172,7 +177,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log(`[cron] 📊 Resultado: confirmed=${confirmed} failed=${failed} pending=${stillPending}`);
+    console.log(
+      `[cron] 📊 Resultado: confirmed=${confirmed} failed=${failed} pending=${stillPending}`,
+    );
 
     return NextResponse.json({
       success: true,
@@ -187,15 +194,21 @@ export async function GET(request: NextRequest) {
     console.error("[cron] ❌ Error general:", error);
     return NextResponse.json(
       { success: false, error: "Error ejecutando verificación" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
-
-function parseStatusNum(payment: Record<string, unknown>): number {
+function parseStatusNum(payment: {
+  status?: unknown;
+  status_code?: unknown;
+  code?: unknown;
+}): number {
+  const status = payment?.status;
   const statusRaw =
-    payment?.status?.code ??
-    payment?.status ??
+    (typeof status === "object" && status !== null && "code" in status
+      ? (status as { code: unknown }).code
+      : null) ??
+    status ??
     payment?.status_code ??
     payment?.code ??
     "0";
