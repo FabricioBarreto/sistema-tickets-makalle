@@ -10,7 +10,6 @@ import {
 import { sendTicketWhatsAppTwilio } from "@/lib/whatsapp-twilio";
 import { sendTicketEmailWithGmail as sendTicketEmailWithQRs } from "@/lib/email-gmail";
 
-// Definir tipos para el webhook
 interface WebhookPayment {
   id: string | number;
   reference: string;
@@ -36,32 +35,23 @@ export async function POST(request: NextRequest) {
   try {
     const rawBody: unknown = await request.json();
 
-    // Validar que body tenga la estructura esperada
+    // Validar estructura básica
     if (
       !rawBody ||
       typeof rawBody !== "object" ||
       !("type" in rawBody) ||
       !("data" in rawBody)
     ) {
-      console.log("⏭️ Webhook con estructura inválida, ignorando");
-      return NextResponse.json({
-        received: true,
-        ignored: "invalid_structure",
-      });
+      console.log("⏭️ Estructura inválida");
+      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
     }
 
     const body = rawBody as WebhookBody;
 
     // ✅ FILTRO 1: Solo tipo "checkout"
     if (body.type !== "checkout") {
-      console.log(
-        `⏭️ Webhook tipo "${body.type}" ignorado (solo procesamos "checkout")`,
-      );
-      return NextResponse.json({
-        received: true,
-        ignored: "wrong_type",
-        type: body.type,
-      });
+      console.log(`⏭️ Tipo: ${body.type}`);
+      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
     }
 
     const webhookData = body.data;
@@ -69,8 +59,8 @@ export async function POST(request: NextRequest) {
 
     // ✅ FILTRO 2: Validar datos completos
     if (!payment || !payment.id || !payment.reference) {
-      console.log("⏭️ Webhook incompleto, ignorando");
-      return NextResponse.json({ received: true, ignored: "incomplete_data" });
+      console.log("⏭️ Datos incompletos");
+      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
     }
 
     const paymentId = String(payment.id);
@@ -78,23 +68,18 @@ export async function POST(request: NextRequest) {
     const statusCode = payment.status?.code || "0";
     const statusNum = parseInt(statusCode, 10);
 
+    // ✅ FILTRO 3: Solo procesar status 200 (aprobado)
+    if (statusNum !== 200) {
+      console.log(`⏭️ Status: ${statusCode}`);
+      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
+    }
+
     console.log("🔔 Webhook válido:", {
       paymentId,
       orderId,
       statusCode,
-      statusNum,
       timestamp: new Date().toISOString(),
     });
-
-    // ✅ FILTRO 3: Solo procesar status 200 (aprobado)
-    if (statusNum !== 200) {
-      console.log(`⏭️ Status ${statusCode} no es aprobado (200), ignorando`);
-      return NextResponse.json({
-        received: true,
-        ignored: "not_approved",
-        status: statusCode,
-      });
-    }
 
     // ✅ FILTRO 4: Verificar si ya procesamos este pago
     const existingOrder = await prisma.order.findFirst({
@@ -106,14 +91,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingOrder) {
-      console.log(
-        `⏭️ Payment ${paymentId} ya fue procesado para orden ${existingOrder.orderNumber}`,
-      );
-      return NextResponse.json({
-        received: true,
-        ignored: "duplicate",
-        orderId: existingOrder.id,
-      });
+      console.log(`⏭️ Ya procesado: ${existingOrder.orderNumber}`);
+      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
     }
 
     // Buscar orden
@@ -123,15 +102,12 @@ export async function POST(request: NextRequest) {
     });
 
     if (!order || !order.tickets || order.tickets.length === 0) {
-      console.error("❌ Order not found or has no tickets:", orderId);
-      return NextResponse.json({
-        received: true,
-        error: "order_not_found",
-      });
+      console.error("❌ Orden no encontrada:", orderId);
+      return new NextResponse(null, { status: 200 });
     }
 
     console.log(
-      `🎫 Found order ${order.orderNumber} with ${order.tickets.length} tickets`,
+      `🎫 Orden: ${order.orderNumber} (${order.tickets.length} tickets)`,
     );
 
     // Mapear status
@@ -140,13 +116,8 @@ export async function POST(request: NextRequest) {
 
     // ✅ FILTRO 5: Anti-downgrade
     if (order.paymentStatus === "COMPLETED" && paymentStatus !== "COMPLETED") {
-      console.log(
-        `🛡️ Ignoring downgrade for order ${order.id}: already COMPLETED, incoming=${paymentStatus}`,
-      );
-      return NextResponse.json({
-        received: true,
-        ignored: "already_completed",
-      });
+      console.log(`🛡️ Anti-downgrade: ${order.orderNumber}`);
+      return new NextResponse(null, { status: 200 });
     }
 
     // Generar token si no existe
@@ -172,12 +143,10 @@ export async function POST(request: NextRequest) {
       data: { status: ticketStatus },
     });
 
-    console.log(
-      `✅ Updated order ${order.orderNumber} - Status: ${ticketStatus}`,
-    );
+    console.log(`✅ Orden actualizada: ${order.orderNumber}`);
 
     // 🎉 ENVÍO AUTOMÁTICO DE TICKETS
-    console.log("💳 Payment approved! Sending notifications...");
+    console.log("💳 Enviando notificaciones...");
 
     const config = await prisma.systemConfig.findFirst();
     const eventName = config?.eventName || "Carnavales Makallé 2026";
@@ -206,7 +175,6 @@ export async function POST(request: NextRequest) {
     let whatsappSent = false;
 
     // 📧 ENVIAR EMAIL
-    console.log("[notifications] 📧 Attempting EMAIL delivery...");
     try {
       const emailResult = await sendTicketEmailWithQRs({
         to: order.buyerEmail,
@@ -221,27 +189,21 @@ export async function POST(request: NextRequest) {
 
       if (emailResult.success) {
         emailSent = true;
-        console.log(`✅ EMAIL sent successfully to ${order.buyerEmail}`);
-        console.log(`📧 Message ID: ${emailResult.messageId}`);
+        console.log(`✅ Email → ${order.buyerEmail}`);
       } else {
-        console.error(
-          `❌ EMAIL failed to ${order.buyerEmail}:`,
-          emailResult.error,
-        );
+        console.error(`❌ Email falló: ${emailResult.error}`);
       }
     } catch (err: unknown) {
-      console.error("❌ EMAIL exception", err);
+      console.error("❌ Email error:", err);
     }
 
     // 📱 ENVIAR WHATSAPP
     if (order.buyerPhone) {
-      console.log("[notifications] 📱 Attempting WhatsApp delivery...");
-
       try {
         if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
-          console.log("⚠️ WhatsApp: Twilio credentials not configured");
+          console.log("⚠️ Twilio no configurado");
         } else if (!process.env.TWILIO_CONTENT_SID) {
-          console.log("⚠️ WhatsApp: Template not configured");
+          console.log("⚠️ Template no configurado");
         } else {
           let normalizedPhone = order.buyerPhone.replace(/[^0-9+]/g, "");
           if (!normalizedPhone.startsWith("+")) {
@@ -261,37 +223,31 @@ export async function POST(request: NextRequest) {
 
           if (whatsappResult.success) {
             whatsappSent = true;
-            console.log(`✅ WhatsApp sent to ${normalizedPhone}`);
+            console.log(`✅ WhatsApp → ${normalizedPhone}`);
           }
         }
       } catch (err: unknown) {
-        console.log("⚠️ WhatsApp exception", err);
+        console.log("⚠️ WhatsApp error:", err);
       }
     }
 
     // 📊 RESUMEN
-    console.log("\n📊 Notification Summary:");
-    console.log(`   📧 Email: ${emailSent ? "✅ Sent" : "❌ Failed"}`);
-    console.log(`   📱 WhatsApp: ${whatsappSent ? "✅ Sent" : "⏭️ Skipped"}`);
-    console.log(`   🔗 Download: ${downloadUrl}\n`);
+    console.log("📊", {
+      email: emailSent ? "✅" : "❌",
+      whatsapp: whatsappSent ? "✅" : "⏭️",
+      download: downloadUrl,
+    });
 
     return NextResponse.json({
       received: true,
       processed: true,
       orderId: order.id,
-      orderNumber: order.orderNumber,
       emailSent,
       whatsappSent,
     });
   } catch (error: unknown) {
     console.error("❌ Webhook error:", error);
-    return NextResponse.json(
-      {
-        received: true,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+    return new NextResponse(null, { status: 500 });
   }
 }
 
