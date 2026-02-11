@@ -1,3 +1,43 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export async function GET() {
+  try {
+    const cfg = await prisma.systemConfig.findFirst({
+      orderBy: { updatedAt: "desc" },
+    });
+
+    if (!cfg) {
+      return NextResponse.json(
+        { success: false, error: "No hay configuración cargada" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ticketPrice: Number(cfg.ticketPrice),
+        totalAvailable: cfg.totalAvailable,
+        maxPerPurchase: cfg.maxPerPurchase,
+        salesEnabled: cfg.salesEnabled,
+        eventDate: cfg.eventDate.toISOString(),
+        eventName: cfg.eventName,
+        eventLocation: cfg.eventLocation ?? "",
+      },
+    });
+  } catch (error: unknown) {
+    console.error("Error /api/config:", error);
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Error interno";
+    return NextResponse.json(
+      { success: false, error: errorMessage },
+      { status: 500 },
+    );
+  }
+}
 "use client";
 
 import { useEffect, useState } from "react";
@@ -91,46 +131,29 @@ export default function LandingPage() {
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch("/api/config", { cache: "no-store" });
+      const cfgRes = await fetch("/api/config", { cache: "no-store" });
+      const cfgData = await cfgRes.json();
 
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        data = null;
-      }
+      if (cfgRes.ok && cfgData?.success) {
+        setConfig(cfgData.data);
 
-      if (!res.ok || !data?.success) {
-        console.error("Config fetch failed:", {
-          status: res.status,
-          statusText: res.statusText,
-          data,
-        });
-        setConfig(null);
-        setLoading(false);
-        return;
-      }
-
-      setConfig(data.data);
-
-      // eventDates puede no existir; ok
-      let dates: EventDate[] = [];
-      try {
-        if (typeof data.data.eventDates === "string") {
-          dates = JSON.parse(data.data.eventDates);
-        } else if (Array.isArray(data.data.eventDates)) {
-          dates = data.data.eventDates;
+        let dates: EventDate[] = [];
+        try {
+          if (typeof cfgData.data.eventDates === "string") {
+            dates = JSON.parse(cfgData.data.eventDates);
+          } else if (Array.isArray(cfgData.data.eventDates)) {
+            dates = cfgData.data.eventDates;
+          }
+        } catch (e) {
+          console.error("Error parsing eventDates:", e);
         }
-      } catch (e) {
-        console.error("Error parsing eventDates:", e);
-      }
-      setEventDates(dates);
+        setEventDates(dates);
+        setLoading(false);
 
-      setLoading(false);
-      fetchStats();
+        fetchStats();
+      }
     } catch (error) {
       console.error("Error fetching config:", error);
-      setConfig(null);
       setLoading(false);
     }
   };
@@ -853,3 +876,192 @@ export default function LandingPage() {
     </div>
   );
 }
+import NextAuth from "next-auth";
+import { authOptions } from "@/lib/auth";
+
+const handler = NextAuth(authOptions);
+
+export { handler as GET, handler as POST };
+import { NextAuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
+import { prisma } from "./prisma";
+import { verifyPassword } from "./password";
+
+export const authOptions: NextAuthOptions = {
+  providers: [
+    CredentialsProvider({
+      name: "Credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Credenciales inválidas");
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email },
+        });
+
+        if (!user || !user.active) {
+          throw new Error("Usuario no encontrado o inactivo");
+        }
+
+        const isValid = await verifyPassword(
+          credentials.password,
+          user.password,
+        );
+
+        if (!isValid) {
+          throw new Error("Contraseña incorrecta");
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        };
+      },
+    }),
+  ],
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+      }
+      return session;
+    },
+  },
+  pages: {
+    signIn: "/admin/login",
+  },
+  session: {
+    strategy: "jwt",
+  },
+  secret: process.env.NEXTAUTH_SECRET,
+};
+// middleware.ts
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+export function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+
+  // ✅ BLOQUEO POR HOST: evita que entren por *.vercel.app (bypass de Cloudflare)
+  const host = request.headers.get("host") || "";
+  const allowedHosts = new Set([
+    "makalleeventos.com",
+    "www.makalleeventos.com",
+  ]);
+
+  // Si querés permitir localhost en dev, descomentá:
+  // allowedHosts.add("localhost:3000");
+
+  if (!allowedHosts.has(host)) {
+    return new NextResponse("Forbidden", {
+      status: 403,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  // ✅ FIREWALL: Bloquear bots ANTES de cualquier lógica
+  const userAgent = request.headers.get("user-agent") || "";
+
+  const blockedAgents = [
+    "python-requests",
+    "curl/",
+    "wget/",
+    "postman",
+    "insomnia",
+    "httpie",
+    "go-http-client",
+    "java/",
+    "apache-httpclient",
+    "bot",
+    "crawler",
+    "spider",
+  ];
+
+  // Bloquear bots en todas las rutas excepto webhooks
+  if (!path.startsWith("/api/unicobros/webhook")) {
+    for (const agent of blockedAgents) {
+      if (userAgent.toLowerCase().includes(agent.toLowerCase())) {
+        console.log(`🛡️ Firewall blocked: ${userAgent} → ${path}`);
+        return new NextResponse("Forbidden", {
+          status: 403,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+    }
+  }
+
+  // Rutas públicas que NO necesitan autenticación
+  const publicPaths = [
+    "/",
+    "/checkout",
+    "/admin/login",
+    "/operador/login",
+    "/api/config",
+    "/api/mercadopago/webhook",
+    "/api/unicobros/webhook",
+    "/api/tickets/download",
+    "/api/tickets/validate",
+  ];
+
+  const response = NextResponse.next();
+
+  // Agregar pathname a los headers
+  response.headers.set("x-pathname", path);
+
+  // Si es una ruta pública, permitir acceso
+  if (publicPaths.some((publicPath) => path.startsWith(publicPath))) {
+    return response;
+  }
+
+  // Para rutas protegidas, verificar el token de NextAuth
+  const token =
+    request.cookies.get("next-auth.session-token") ||
+    request.cookies.get("__Secure-next-auth.session-token");
+
+  // Redirigir según la ruta
+  if (!token) {
+    if (path.startsWith("/admin")) {
+      const loginUrl = new URL("/admin/login", request.url);
+      loginUrl.searchParams.set("callbackUrl", path);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (path.startsWith("/operador")) {
+      const loginUrl = new URL("/operador/login", request.url);
+      loginUrl.searchParams.set("callbackUrl", path);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
+  return response;
+}
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+};
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    formats: ["image/webp", "image/avif"],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+  },
+};
+
+export default nextConfig;

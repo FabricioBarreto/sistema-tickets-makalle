@@ -60,6 +60,7 @@ export function middleware(request: NextRequest) {
     "/admin/login",
     "/operador/login",
     "/api/config",
+    "/api/auth", // 👈 agregá esto
     "/api/mercadopago/webhook",
     "/api/unicobros/webhook",
     "/api/tickets/download",
