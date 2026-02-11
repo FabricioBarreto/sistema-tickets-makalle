@@ -69,9 +69,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ BLOQUEAR EMAILS DE PRUEBA EN PRODUCCIÓN
+    // ✅ SEGURIDAD 1: Bloquear bots y scripts automatizados
+    const userAgent = req.headers.get("user-agent") || "";
+    const suspiciousAgents = [
+      "python-requests",
+      "curl",
+      "wget",
+      "postman",
+      "insomnia",
+      "bot",
+      "crawler",
+      "spider",
+    ];
+
+    if (
+      process.env.NODE_ENV === "production" &&
+      suspiciousAgents.some((agent) => userAgent.toLowerCase().includes(agent))
+    ) {
+      console.log(`⛔ Blocked suspicious user agent: ${userAgent}`);
+      return NextResponse.json(
+        { success: false, error: "Acceso no autorizado" },
+        { status: 403 },
+      );
+    }
+
+    // ✅ SEGURIDAD 2: Bloquear emails de prueba en producción
     if (process.env.NODE_ENV === "production") {
-      const testDomains = ["@example.com", "@test.com", "@testing.com"];
+      const testDomains = [
+        "@example.com",
+        "@test.com",
+        "@testing.com",
+        "@mail.com",
+        "@temp-mail",
+        "@throwaway",
+        "@guerrillamail",
+        "@10minutemail",
+      ];
+
       const isTestEmail = testDomains.some((domain) =>
         buyerEmail.toLowerCase().includes(domain),
       );
@@ -87,6 +121,23 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+    }
+
+    // ✅ SEGURIDAD 3: Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(buyerEmail)) {
+      return NextResponse.json(
+        { success: false, error: "Formato de email inválido" },
+        { status: 400 },
+      );
+    }
+
+    // ✅ SEGURIDAD 4: Validar longitud de nombre
+    if (buyerName.length < 3 || buyerName.length > 100) {
+      return NextResponse.json(
+        { success: false, error: "Nombre inválido" },
+        { status: 400 },
+      );
     }
 
     if (quantity < 1 || quantity > 50) {
@@ -168,6 +219,8 @@ export async function POST(req: NextRequest) {
 
       tickets.push(ticket);
     }
+
+    console.log(`✅ Order created: ${orderNumber} - ${buyerEmail}`);
 
     return NextResponse.json({
       success: true,
