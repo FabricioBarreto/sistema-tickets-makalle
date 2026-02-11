@@ -12,86 +12,85 @@ import { sendTicketEmailWithGmail as sendTicketEmailWithQRs } from "@/lib/email-
 
 interface WebhookPayment {
   id: string | number;
-  reference: string;
-  status?: {
-    code: string;
-  };
+  reference?: string;
+  external_reference?: string;
+
+  // Unicobros puede mandar status como número o como objeto con code
+  status?: number | string | { code?: string | number };
+  status_code?: number | string;
+  code?: number | string;
 }
 
 interface WebhookData {
-  payment: WebhookPayment;
+  payment?: WebhookPayment;
 }
 
 interface WebhookBody {
-  type: string;
-  data: WebhookData;
+  type?: string;
+  data?: WebhookData;
 }
 
-// ✅ RATE LIMITING GLOBAL AGRESIVO
-let lastProcessedTime = 0;
-const GLOBAL_RATE_LIMIT_MS = 1000; // 1 segundo entre webhooks
-const processedPayments = new Map<string, number>(); // Cache de payments procesados
+// Cache de payments procesados (idempotencia)
+const processedPayments = new Map<string, number>();
 
 function generateDownloadToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-function checkGlobalRateLimit(): boolean {
-  const now = Date.now();
-  if (now - lastProcessedTime < GLOBAL_RATE_LIMIT_MS) {
-    return false; // Demasiado rápido
-  }
-  lastProcessedTime = now;
-  return true;
+function parseStatusNum(payment: any): number {
+  const statusRaw =
+    payment?.status?.code ?? // formato { status: { code: "200" } }
+    payment?.status ?? // formato { status: 200 }
+    payment?.status_code ?? // por si viene así
+    payment?.code ?? // por si viene plano
+    "0";
+
+  const n = parseInt(String(statusRaw), 10);
+  return Number.isFinite(n) ? n : 0;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // ✅ RATE LIMIT GLOBAL (1 req/segundo para TODO)
-    if (!checkGlobalRateLimit()) {
-      return new NextResponse(null, { status: 200 });
-    }
-
     const rawBody: unknown = await request.json();
 
-    // Validar estructura básica
-    if (
-      !rawBody ||
-      typeof rawBody !== "object" ||
-      !("type" in rawBody) ||
-      !("data" in rawBody)
-    ) {
+    // Validar estructura mínima
+    if (!rawBody || typeof rawBody !== "object") {
       return new NextResponse(null, { status: 200 });
     }
 
     const body = rawBody as WebhookBody;
 
-    // ✅ FILTRO 1: Solo tipo "checkout"
-    if (body.type !== "checkout") {
-      console.log(`⏭️ Tipo: ${body.type}`);
+    // ✅ No te cases con type === "checkout"
+    // Unicobros puede variar el "type", pero si viene data.payment, sirve.
+    const payment = body?.data?.payment;
+    if (!payment || !payment.id) {
       return new NextResponse(null, { status: 200 });
     }
 
-    const webhookData = body.data;
-    const payment = webhookData?.payment;
+    // Log útil para ver qué manda Unicobros de verdad
+    console.log("🧾 Webhook payload.payment:", payment);
 
-    // ✅ FILTRO 2: Validar datos completos
-    if (!payment || !payment.id || !payment.reference) {
+    const anyPayment = payment as any;
+
+    const paymentId = String(anyPayment.id);
+    const orderId = String(
+      anyPayment.reference ?? anyPayment.external_reference ?? "",
+    );
+
+    if (!orderId) {
+      console.log("⏭️ Webhook sin reference/external_reference");
       return new NextResponse(null, { status: 200 });
     }
 
-    const paymentId = String(payment.id);
-    const orderId = payment.reference;
-    const statusCode = payment.status?.code || "0";
-    const statusNum = parseInt(statusCode, 10);
+    const statusNum = parseStatusNum(anyPayment);
 
-    // ✅ FILTRO 3: Solo procesar status 200 (aprobado)
+    // Solo procesar aprobado
     if (statusNum !== 200) {
-      console.log(`⏭️ Status: ${statusCode}`);
+      console.log(`⏭️ Status no aprobado: ${statusNum}`);
       return new NextResponse(null, { status: 200 });
     }
 
-    // ✅ FILTRO 4: Cache en memoria (evitar procesar el mismo payment múltiples veces)
+    // Cache en memoria (evitar procesar el mismo payment múltiples veces)
     const cacheKey = `${paymentId}-${orderId}`;
     const lastProcessed = processedPayments.get(cacheKey);
     const now = Date.now();
@@ -99,19 +98,19 @@ export async function POST(request: NextRequest) {
     if (lastProcessed && now - lastProcessed < 300000) {
       // 5 minutos
       console.log(
-        `⏭️ Ya procesado: ${paymentId} (hace ${Math.round((now - lastProcessed) / 1000)}s)`,
+        `⏭️ Ya procesado (cache): ${paymentId} (hace ${Math.round((now - lastProcessed) / 1000)}s)`,
       );
       return new NextResponse(null, { status: 200 });
     }
 
-    console.log("🔔 Webhook válido:", {
+    console.log("🔔 Webhook aprobado:", {
       paymentId,
       orderId,
-      statusCode,
+      statusNum,
       timestamp: new Date().toISOString(),
     });
 
-    // ✅ FILTRO 5: Verificar en DB si ya procesamos este pago
+    // Verificar en DB si ya procesamos este pago
     const existingOrder = await prisma.order.findFirst({
       where: {
         mercadoPagoId: paymentId,
@@ -122,7 +121,7 @@ export async function POST(request: NextRequest) {
 
     if (existingOrder) {
       console.log(`⏭️ Ya procesado en DB: ${existingOrder.orderNumber}`);
-      processedPayments.set(cacheKey, now); // Guardar en cache
+      processedPayments.set(cacheKey, now);
       return new NextResponse(null, { status: 200 });
     }
 
@@ -133,7 +132,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!order || !order.tickets || order.tickets.length === 0) {
-      console.error("❌ Orden no encontrada:", orderId);
+      console.error("❌ Orden no encontrada o sin tickets:", orderId);
       return new NextResponse(null, { status: 200 });
     }
 
@@ -141,11 +140,10 @@ export async function POST(request: NextRequest) {
       `🎫 Orden: ${order.orderNumber} (${order.tickets.length} tickets)`,
     );
 
-    // Mapear status
     const ticketStatus = mapMPStatusToInternal(statusNum) as TicketStatus;
     const paymentStatus = mapMPStatusToPaymentStatus(statusNum);
 
-    // ✅ FILTRO 6: Anti-downgrade
+    // Anti-downgrade (por si te mandan estados viejos después)
     if (order.paymentStatus === "COMPLETED" && paymentStatus !== "COMPLETED") {
       console.log(`🛡️ Anti-downgrade: ${order.orderNumber}`);
       processedPayments.set(cacheKey, now);
@@ -158,16 +156,14 @@ export async function POST(request: NextRequest) {
       downloadToken = generateDownloadToken();
     }
 
-    // ✅ MARCAR COMO PROCESADO EN CACHE ANTES DE ACTUALIZAR DB
+    // Marcar cache antes de DB (idempotencia)
     processedPayments.set(cacheKey, now);
 
     // Limpiar cache viejo (> 1 hora)
     if (processedPayments.size > 500) {
       const oneHourAgo = now - 3600000;
       for (const [key, time] of processedPayments.entries()) {
-        if (time < oneHourAgo) {
-          processedPayments.delete(key);
-        }
+        if (time < oneHourAgo) processedPayments.delete(key);
       }
     }
 
@@ -177,7 +173,7 @@ export async function POST(request: NextRequest) {
       data: {
         paymentStatus,
         mercadoPagoId: paymentId,
-        mercadoPagoStatus: statusCode,
+        mercadoPagoStatus: String(statusNum),
         downloadToken,
       },
     });
@@ -190,7 +186,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Orden actualizada: ${order.orderNumber}`);
 
-    // 🎉 ENVÍO AUTOMÁTICO DE TICKETS
+    // Envío automático
     console.log("💳 Enviando notificaciones...");
 
     const config = await prisma.systemConfig.findFirst();
@@ -219,7 +215,7 @@ export async function POST(request: NextRequest) {
     let emailSent = false;
     let whatsappSent = false;
 
-    // 📧 ENVIAR EMAIL
+    // Email
     try {
       const emailResult = await sendTicketEmailWithQRs({
         to: order.buyerEmail,
@@ -242,7 +238,7 @@ export async function POST(request: NextRequest) {
       console.error("❌ Email error:", err);
     }
 
-    // 📱 ENVIAR WHATSAPP
+    // WhatsApp
     if (order.buyerPhone) {
       try {
         if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
@@ -276,7 +272,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 📊 RESUMEN
     console.log("📊", {
       email: emailSent ? "✅" : "❌",
       whatsapp: whatsappSent ? "✅" : "⏭️",
@@ -299,8 +294,8 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "active",
-    message: "Unicobros webhook endpoint with rate limiting",
-    version: "3.1",
+    message: "Unicobros webhook endpoint (fixed parsing + idempotency)",
+    version: "4.0",
     timestamp: new Date().toISOString(),
   });
 }
