@@ -5,6 +5,37 @@ import type { NextRequest } from "next/server";
 export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
+  // ✅ FIREWALL: Bloquear bots ANTES de cualquier lógica
+  const userAgent = request.headers.get("user-agent") || "";
+
+  const blockedAgents = [
+    "python-requests",
+    "curl/",
+    "wget/",
+    "postman",
+    "insomnia",
+    "httpie",
+    "go-http-client",
+    "java/",
+    "apache-httpclient",
+    "bot",
+    "crawler",
+    "spider",
+  ];
+
+  // Bloquear bots en todas las rutas excepto webhooks
+  if (!path.startsWith("/api/unicobros/webhook")) {
+    for (const agent of blockedAgents) {
+      if (userAgent.toLowerCase().includes(agent.toLowerCase())) {
+        console.log(`🛡️ Firewall blocked: ${userAgent} → ${path}`);
+        return new NextResponse("Forbidden", {
+          status: 403,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+    }
+  }
+
   // Rutas públicas que NO necesitan autenticación
   const publicPaths = [
     "/",
