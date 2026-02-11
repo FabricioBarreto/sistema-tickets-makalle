@@ -166,12 +166,28 @@ function CheckoutContent() {
       console.log("💳 Response texto:", mpText);
 
       if (!mpRes.ok) {
+        const mpData = mpText ? JSON.parse(mpText) : null;
+
+        // ✅ Si está bloqueado, redirigir al inicio
+        if (mpData?.blocked || (mpData?.redirect && mpData.redirect === "/")) {
+          console.log("🚫 Bloqueado - Redirigiendo al inicio");
+          toast.error(
+            mpData.error || "Demasiados intentos. Intenta más tarde.",
+          );
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 2000);
+          return;
+        }
+
         // Si es 429 (rate limit), mostrar mensaje específico
         if (mpRes.status === 429) {
           throw new Error(
-            "Por favor espera unos segundos antes de intentar nuevamente",
+            mpData?.error ||
+              "Por favor espera unos segundos antes de intentar nuevamente",
           );
         }
+
         throw new Error(`Error al crear el pago (${mpRes.status}): ${mpText}`);
       }
 
@@ -179,6 +195,16 @@ function CheckoutContent() {
       console.log("💳 Data parseado:", mpData);
 
       if (!mpData?.success) {
+        // ✅ Manejar redirección si la orden ya está pagada
+        if (mpData?.redirect && mpData.redirect !== "/") {
+          console.log("✅ Orden ya pagada - Redirigiendo a success");
+          toast.success("Redirigiendo...");
+          setTimeout(() => {
+            window.location.href = mpData.redirect;
+          }, 1000);
+          return;
+        }
+
         throw new Error(
           mpData?.error || mpText || "Error al crear preferencia",
         );

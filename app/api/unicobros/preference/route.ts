@@ -2,33 +2,67 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPreference } from "@/lib/unicobros";
 
-// ✅ Rate limiting para prevenir checkouts duplicados
-const preferenceCache = new Map<string, number>();
-const PREFERENCE_RATE_LIMIT_MS = 5000; // 5 segundos entre requests del mismo orderId
+// ✅ Rate limiting con conteo de intentos
+const preferenceCache = new Map<
+  string,
+  { timestamp: number; attempts: number }
+>();
+const PREFERENCE_RATE_LIMIT_MS = 5000; // 5 segundos entre requests
+const MAX_ATTEMPTS = 3; // Máximo 3 intentos antes de bloquear
 
 function checkPreferenceRateLimit(orderId: string): {
   allowed: boolean;
   waitTime?: number;
+  blocked?: boolean;
+  attempts?: number;
 } {
   const now = Date.now();
-  const lastRequest = preferenceCache.get(orderId);
+  const cached = preferenceCache.get(orderId);
 
-  if (lastRequest && now - lastRequest < PREFERENCE_RATE_LIMIT_MS) {
-    const waitTime = PREFERENCE_RATE_LIMIT_MS - (now - lastRequest);
-    return { allowed: false, waitTime: Math.ceil(waitTime / 1000) };
+  if (!cached) {
+    // Primera vez
+    preferenceCache.set(orderId, { timestamp: now, attempts: 1 });
+    return { allowed: true };
   }
 
-  preferenceCache.set(orderId, now);
+  const timeSinceFirst = now - cached.timestamp;
 
-  // Limpiar cache viejo (> 1 hora)
-  if (preferenceCache.size > 500) {
-    const oneHourAgo = now - 3600000;
-    for (const [key, time] of preferenceCache.entries()) {
-      if (time < oneHourAgo) preferenceCache.delete(key);
-    }
+  // Si pasaron más de 2 minutos, resetear contador
+  if (timeSinceFirst > 120000) {
+    preferenceCache.set(orderId, { timestamp: now, attempts: 1 });
+    return { allowed: true };
   }
 
-  return { allowed: true };
+  // Si ya superó el límite de intentos, bloquear
+  if (cached.attempts >= MAX_ATTEMPTS) {
+    console.log(
+      `🚫 Bloqueado: ${orderId} - ${cached.attempts} intentos en ${Math.round(timeSinceFirst / 1000)}s`,
+    );
+    return {
+      allowed: false,
+      blocked: true,
+      attempts: cached.attempts,
+    };
+  }
+
+  // Rate limit normal
+  const timeSinceLast = now - cached.timestamp;
+  if (timeSinceLast < PREFERENCE_RATE_LIMIT_MS) {
+    const waitTime = PREFERENCE_RATE_LIMIT_MS - timeSinceLast;
+    return {
+      allowed: false,
+      waitTime: Math.ceil(waitTime / 1000),
+      attempts: cached.attempts,
+    };
+  }
+
+  // Permitir pero incrementar contador
+  preferenceCache.set(orderId, {
+    timestamp: now,
+    attempts: cached.attempts + 1,
+  });
+
+  return { allowed: true, attempts: cached.attempts + 1 };
 }
 
 function normalizeUrl(url: string): string {
@@ -49,14 +83,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ VERIFICAR RATE LIMIT
+    // ✅ VERIFICAR RATE LIMIT Y BLOQUEO
     const rateLimit = checkPreferenceRateLimit(orderId);
+
     if (!rateLimit.allowed) {
-      console.log(`⏳ Rate limit: ${orderId} - espera ${rateLimit.waitTime}s`);
+      if (rateLimit.blocked) {
+        // 🚫 BLOQUEADO - Redirigir al inicio
+        console.log(`🚫 BLOQUEADO: ${orderId} - Redirigiendo al inicio`);
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Demasiados intentos. Intenta nuevamente más tarde.",
+            redirect: "/", // ✅ Redirigir al inicio
+            blocked: true,
+          },
+          { status: 429 },
+        );
+      }
+
+      // ⏳ Rate limit normal
+      console.log(
+        `⏳ Rate limit: ${orderId} - espera ${rateLimit.waitTime}s (intento ${rateLimit.attempts}/${MAX_ATTEMPTS})`,
+      );
       return NextResponse.json(
         {
           success: false,
           error: `Espera ${rateLimit.waitTime} segundos antes de intentar nuevamente`,
+          attempts: rateLimit.attempts,
+          maxAttempts: MAX_ATTEMPTS,
         },
         { status: 429 },
       );
@@ -92,7 +146,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(`✅ Orden encontrada: ${order.orderNumber}`);
+    console.log(
+      `✅ Orden encontrada: ${order.orderNumber} (intento ${rateLimit.attempts || 1}/${MAX_ATTEMPTS})`,
+    );
 
     const rawUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const appUrl = normalizeUrl(rawUrl);
@@ -137,10 +193,8 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error("❌ Error en Unicobros preference:", error);
 
-    // Contexto adicional para errores de Prisma
     if (error instanceof Error && error.message.includes("Prisma")) {
       console.error("💡 Tip: Verifica DATABASE_URL en variables de entorno");
-      console.error("💡 Tip: Cambia a Transaction Mode en Supabase");
     }
 
     return NextResponse.json(
