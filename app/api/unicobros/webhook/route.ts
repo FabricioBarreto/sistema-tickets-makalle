@@ -12,7 +12,7 @@ import { confirmPayment } from "@/lib/payment-confirm";
 interface WebhookBody {
   type?: string;
   data?: {
-    payment?: Record<string, any>;
+    payment?: Record<string, unknown>;
   };
 }
 

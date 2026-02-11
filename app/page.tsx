@@ -93,7 +93,7 @@ export default function LandingPage() {
     try {
       const res = await fetch("/api/config", { cache: "no-store" });
 
-      let data: any = null;
+      let data: Record<string, unknown> | null = null;
       try {
         data = await res.json();
       } catch {
