@@ -222,17 +222,26 @@ function parseStatusFromPayment(payment: {
   code?: unknown;
 }): number {
   const status = payment?.status;
+
   const statusRaw =
     (typeof status === "object" && status !== null && "code" in status
       ? (status as { code: unknown }).code
-      : null) ??
+      : undefined) ??
     status ??
     payment?.status_code ??
-    payment?.code ??
-    "0";
+    payment?.code;
+
+  // 👇 Si no viene status, NO es rechazo. Es "no pude interpretar".
+  if (
+    statusRaw === undefined ||
+    statusRaw === null ||
+    String(statusRaw).trim() === ""
+  ) {
+    return -1; // UNKNOWN
+  }
 
   const n = parseInt(String(statusRaw), 10);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n : -1;
 }
 
 function mapStatusToLabel(statusNum: number): string {
@@ -248,8 +257,9 @@ function mapStatusToLabel(statusNum: number): string {
       return "FAILED";
     case 603:
       return "REFUNDED";
+    case -1:
     default:
-      return "PENDING";
+      return "PENDING"; // 👈 UNKNOWN => PENDING
   }
 }
 
@@ -267,7 +277,8 @@ function getStatusMessage(statusNum: number): string {
       return "Pago no autorizado";
     case 603:
       return "Pago reembolsado";
+    case -1:
     default:
-      return "Estado desconocido, verificando...";
+      return "No pudimos confirmar aún. Seguimos verificando...";
   }
 }
