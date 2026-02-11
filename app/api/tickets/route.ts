@@ -57,12 +57,47 @@ export async function GET() {
 
 // POST - Crear nueva orden con tickets
 export async function POST(req: NextRequest) {
+  // 🚨 DEBUG: LOGGING TEMPORAL PARA IDENTIFICAR ATACANTE
+  const clientIP =
+    req.headers.get("x-forwarded-for") ||
+    req.headers.get("x-real-ip") ||
+    req.headers.get("cf-connecting-ip") ||
+    "unknown";
+
+  const debugInfo = {
+    timestamp: new Date().toISOString(),
+    ip: clientIP,
+    userAgent: req.headers.get("user-agent") || "none",
+    referer: req.headers.get("referer") || "none",
+    origin: req.headers.get("origin") || "none",
+    cfCountry: req.headers.get("cf-ipcountry") || "unknown",
+    cfRay: req.headers.get("cf-ray") || "none",
+    host: req.headers.get("host"),
+    acceptLanguage: req.headers.get("accept-language") || "none",
+  };
+
+  console.log(
+    "🚨 POST /api/tickets REQUEST:",
+    JSON.stringify(debugInfo, null, 2),
+  );
+  // FIN DEBUG
+
   try {
     const body = await req.json();
     const { buyerName, buyerEmail, buyerPhone, quantity } = body;
 
+    // 🚨 DEBUG: Log del contenido del request
+    console.log("🚨 REQUEST BODY:", {
+      buyerName,
+      buyerEmail,
+      buyerPhone,
+      quantity,
+      ip: clientIP,
+    });
+
     // ✅ Validación básica
     if (!buyerName || !buyerEmail || !quantity) {
+      console.log("⛔ BLOCKED: Missing required fields from IP:", clientIP);
       return NextResponse.json(
         { success: false, error: "Faltan datos requeridos" },
         { status: 400 },
@@ -87,7 +122,9 @@ export async function POST(req: NextRequest) {
       );
 
       if (isTestEmail) {
-        console.log(`⛔ Blocked test email: ${buyerEmail}`);
+        console.log(
+          `⛔ BLOCKED test email: ${buyerEmail} from IP: ${clientIP}`,
+        );
         return NextResponse.json(
           {
             success: false,
@@ -102,6 +139,9 @@ export async function POST(req: NextRequest) {
     // ✅ SEGURIDAD 2: Validar formato de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(buyerEmail)) {
+      console.log(
+        `⛔ BLOCKED invalid email: ${buyerEmail} from IP: ${clientIP}`,
+      );
       return NextResponse.json(
         { success: false, error: "Formato de email inválido" },
         { status: 400 },
@@ -110,6 +150,7 @@ export async function POST(req: NextRequest) {
 
     // ✅ SEGURIDAD 3: Validar longitud de nombre
     if (buyerName.length < 3 || buyerName.length > 100) {
+      console.log(`⛔ BLOCKED invalid name length from IP: ${clientIP}`);
       return NextResponse.json(
         { success: false, error: "Nombre inválido" },
         { status: 400 },
@@ -118,6 +159,9 @@ export async function POST(req: NextRequest) {
 
     // ✅ SEGURIDAD 4: Validar cantidad
     if (quantity < 1 || quantity > 50) {
+      console.log(
+        `⛔ BLOCKED invalid quantity: ${quantity} from IP: ${clientIP}`,
+      );
       return NextResponse.json(
         { success: false, error: "Cantidad inválida" },
         { status: 400 },
@@ -138,6 +182,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!config.salesEnabled) {
+      console.log(`⛔ BLOCKED: Sales disabled - IP: ${clientIP}`);
       return NextResponse.json(
         { success: false, error: "Las ventas están cerradas" },
         { status: 400 },
@@ -150,6 +195,7 @@ export async function POST(req: NextRequest) {
 
     const available = config.totalAvailable - soldCount;
     if (available < quantity) {
+      console.log(`⛔ BLOCKED: Insufficient tickets - IP: ${clientIP}`);
       return NextResponse.json(
         {
           success: false,
@@ -197,7 +243,10 @@ export async function POST(req: NextRequest) {
       tickets.push(ticket);
     }
 
-    console.log(`✅ Order created: ${orderNumber} - ${buyerEmail}`);
+    // 🚨 DEBUG: Log de orden exitosa
+    console.log(
+      `✅ Order created: ${orderNumber} - ${buyerEmail} - IP: ${clientIP} - Country: ${debugInfo.cfCountry}`,
+    );
 
     return NextResponse.json({
       success: true,
@@ -215,6 +264,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("Error creating order:", error);
+    console.log("🚨 ERROR from IP:", clientIP);
     const errorMessage =
       error instanceof Error ? error.message : "Error al crear la orden";
     return NextResponse.json(
