@@ -5,15 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
-import {
-  Search,
-  Filter,
-  Download,
-  Eye,
-  CheckCircle,
-  XCircle,
-  Clock,
-} from "lucide-react";
+import { Search, Download, Eye, CheckCircle, XCircle } from "lucide-react";
 
 interface Ticket {
   id: string;
@@ -21,13 +13,20 @@ interface Ticket {
   orderNumber: string;
   buyerName: string;
   buyerEmail: string;
-  buyerDNI: string; // ✅ Puede estar vacío
+  buyerDNI: string;
   quantity: number;
   price: string;
   validated: boolean;
   validatedAt?: string;
   purchaseDate: string;
+
+  // viene de Order
   paymentStatus: string;
+
+  // viene de Ticket + calculado en API
+  ticketStatus?: string;
+  displayStatus?: "PAID" | "PENDING_PAYMENT";
+
   validatedBy?: {
     name: string;
   };
@@ -52,7 +51,7 @@ export default function TicketsPage() {
 
   const fetchTickets = async () => {
     try {
-      const res = await fetch("/api/tickets");
+      const res = await fetch("/api/tickets", { cache: "no-store" });
       const data = await res.json();
       if (data.success) {
         setTickets(data.tickets);
@@ -64,6 +63,15 @@ export default function TicketsPage() {
     }
   };
 
+  const isPaidTicket = (t: Ticket) => {
+    return (
+      t.displayStatus === "PAID" ||
+      t.ticketStatus === "PAID" ||
+      t.ticketStatus === "VALIDATED" ||
+      t.paymentStatus === "COMPLETED"
+    );
+  };
+
   const filterTickets = () => {
     let filtered = [...tickets];
 
@@ -71,6 +79,7 @@ export default function TicketsPage() {
     if (filterStatus === "validated") {
       filtered = filtered.filter((t) => t.validated);
     } else if (filterStatus === "pending") {
+      // "pendiente" = no validada (independiente de pago)
       filtered = filtered.filter((t) => !t.validated);
     }
 
@@ -81,7 +90,7 @@ export default function TicketsPage() {
         (t) =>
           t.buyerName.toLowerCase().includes(term) ||
           t.buyerEmail.toLowerCase().includes(term) ||
-          t.buyerDNI.includes(term) || // ✅ Busca en DNI aunque puede estar vacío
+          (t.buyerDNI ?? "").toLowerCase().includes(term) ||
           t.orderNumber.toLowerCase().includes(term) ||
           t.code.toLowerCase().includes(term),
       );
@@ -98,9 +107,13 @@ export default function TicketsPage() {
       Orden: t.orderNumber,
       Comprador: t.buyerName,
       Email: t.buyerEmail,
-      DNI: t.buyerDNI || "N/A", // ✅ Muestra N/A si está vacío
+      DNI: t.buyerDNI || "N/A",
       "Fecha compra": new Date(t.purchaseDate).toLocaleString("es-AR"),
-      "Estado pago": t.paymentStatus,
+
+      // Preferimos el estado calculado, si no, cae al de la orden
+      "Estado pago":
+        t.displayStatus === "PAID" ? "PAID" : (t.paymentStatus ?? "PENDING"),
+
       Validada: t.validated ? "SI" : "NO",
       "Validada el": t.validatedAt
         ? new Date(t.validatedAt).toLocaleString("es-AR")
@@ -122,21 +135,23 @@ export default function TicketsPage() {
           Validada
         </span>
       );
-    } else if (ticket.paymentStatus === "COMPLETED") {
+    }
+
+    if (isPaidTicket(ticket)) {
       return (
-        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">
-          <Clock className="h-3 w-3 mr-1" />
-          Pendiente
-        </span>
-      );
-    } else {
-      return (
-        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
-          <XCircle className="h-3 w-3 mr-1" />
-          Sin pagar
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Pagada
         </span>
       );
     }
+
+    return (
+      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+        <XCircle className="h-3 w-3 mr-1" />
+        Sin pagar
+      </span>
+    );
   };
 
   if (loading) {
@@ -146,6 +161,14 @@ export default function TicketsPage() {
       </div>
     );
   }
+
+  const totalTickets = tickets.length;
+  const totalValidated = tickets.filter((t) => t.validated).length;
+
+  // Pendientes = no validada y no pagada
+  const totalPending = tickets.filter(
+    (t) => !t.validated && !isPaidTicket(t),
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -172,23 +195,15 @@ export default function TicketsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="p-4">
           <p className="text-sm text-gray-600">Total Entradas</p>
-          <p className="text-2xl font-bold text-gray-900">{tickets.length}</p>
+          <p className="text-2xl font-bold text-gray-900">{totalTickets}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm text-gray-600">Validadas</p>
-          <p className="text-2xl font-bold text-green-600">
-            {tickets.filter((t) => t.validated).length}
-          </p>
+          <p className="text-2xl font-bold text-green-600">{totalValidated}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm text-gray-600">Pendientes</p>
-          <p className="text-2xl font-bold text-yellow-600">
-            {
-              tickets.filter(
-                (t) => !t.validated && t.paymentStatus === "COMPLETED",
-              ).length
-            }
-          </p>
+          <p className="text-2xl font-bold text-yellow-600">{totalPending}</p>
         </Card>
       </div>
 

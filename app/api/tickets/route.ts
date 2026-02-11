@@ -24,6 +24,12 @@ export async function GET() {
 
       const validated = t.status === "VALIDATED" || !!t.validatedAt;
 
+      // ✅ Regla “realista”: si la orden está COMPLETED, para el panel es pagado
+      const isPaid =
+        t.order.paymentStatus === "COMPLETED" ||
+        t.status === "PAID" ||
+        t.status === "VALIDATED";
+
       return {
         id: t.id,
         code: t.code,
@@ -36,7 +42,11 @@ export async function GET() {
         validated,
         validatedAt: t.validatedAt?.toISOString?.() ?? null,
         purchaseDate: t.order.purchaseDate.toISOString(),
+
         paymentStatus: t.order.paymentStatus,
+        ticketStatus: t.status, // 👈 NUEVO
+        displayStatus: isPaid ? "PAID" : "PENDING_PAYMENT", // 👈 NUEVO
+
         validatedBy: lastValidation
           ? { name: lastValidation.user.name }
           : validated
