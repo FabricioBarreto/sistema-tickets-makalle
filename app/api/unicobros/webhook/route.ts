@@ -27,12 +27,31 @@ interface WebhookBody {
   data: WebhookData;
 }
 
+// ✅ RATE LIMITING GLOBAL AGRESIVO
+let lastProcessedTime = 0;
+const GLOBAL_RATE_LIMIT_MS = 1000; // 1 segundo entre webhooks
+const processedPayments = new Map<string, number>(); // Cache de payments procesados
+
 function generateDownloadToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+function checkGlobalRateLimit(): boolean {
+  const now = Date.now();
+  if (now - lastProcessedTime < GLOBAL_RATE_LIMIT_MS) {
+    return false; // Demasiado rápido
+  }
+  lastProcessedTime = now;
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // ✅ RATE LIMIT GLOBAL (1 req/segundo para TODO)
+    if (!checkGlobalRateLimit()) {
+      return new NextResponse(null, { status: 200 });
+    }
+
     const rawBody: unknown = await request.json();
 
     // Validar estructura básica
@@ -42,8 +61,7 @@ export async function POST(request: NextRequest) {
       !("type" in rawBody) ||
       !("data" in rawBody)
     ) {
-      console.log("⏭️ Estructura inválida");
-      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
+      return new NextResponse(null, { status: 200 });
     }
 
     const body = rawBody as WebhookBody;
@@ -51,7 +69,7 @@ export async function POST(request: NextRequest) {
     // ✅ FILTRO 1: Solo tipo "checkout"
     if (body.type !== "checkout") {
       console.log(`⏭️ Tipo: ${body.type}`);
-      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
+      return new NextResponse(null, { status: 200 });
     }
 
     const webhookData = body.data;
@@ -59,8 +77,7 @@ export async function POST(request: NextRequest) {
 
     // ✅ FILTRO 2: Validar datos completos
     if (!payment || !payment.id || !payment.reference) {
-      console.log("⏭️ Datos incompletos");
-      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
+      return new NextResponse(null, { status: 200 });
     }
 
     const paymentId = String(payment.id);
@@ -71,7 +88,20 @@ export async function POST(request: NextRequest) {
     // ✅ FILTRO 3: Solo procesar status 200 (aprobado)
     if (statusNum !== 200) {
       console.log(`⏭️ Status: ${statusCode}`);
-      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
+      return new NextResponse(null, { status: 200 });
+    }
+
+    // ✅ FILTRO 4: Cache en memoria (evitar procesar el mismo payment múltiples veces)
+    const cacheKey = `${paymentId}-${orderId}`;
+    const lastProcessed = processedPayments.get(cacheKey);
+    const now = Date.now();
+
+    if (lastProcessed && now - lastProcessed < 300000) {
+      // 5 minutos
+      console.log(
+        `⏭️ Ya procesado: ${paymentId} (hace ${Math.round((now - lastProcessed) / 1000)}s)`,
+      );
+      return new NextResponse(null, { status: 200 });
     }
 
     console.log("🔔 Webhook válido:", {
@@ -81,7 +111,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
-    // ✅ FILTRO 4: Verificar si ya procesamos este pago
+    // ✅ FILTRO 5: Verificar en DB si ya procesamos este pago
     const existingOrder = await prisma.order.findFirst({
       where: {
         mercadoPagoId: paymentId,
@@ -91,8 +121,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingOrder) {
-      console.log(`⏭️ Ya procesado: ${existingOrder.orderNumber}`);
-      return new NextResponse(null, { status: 200 }); // ✅ Respuesta más rápida
+      console.log(`⏭️ Ya procesado en DB: ${existingOrder.orderNumber}`);
+      processedPayments.set(cacheKey, now); // Guardar en cache
+      return new NextResponse(null, { status: 200 });
     }
 
     // Buscar orden
@@ -114,9 +145,10 @@ export async function POST(request: NextRequest) {
     const ticketStatus = mapMPStatusToInternal(statusNum) as TicketStatus;
     const paymentStatus = mapMPStatusToPaymentStatus(statusNum);
 
-    // ✅ FILTRO 5: Anti-downgrade
+    // ✅ FILTRO 6: Anti-downgrade
     if (order.paymentStatus === "COMPLETED" && paymentStatus !== "COMPLETED") {
       console.log(`🛡️ Anti-downgrade: ${order.orderNumber}`);
+      processedPayments.set(cacheKey, now);
       return new NextResponse(null, { status: 200 });
     }
 
@@ -124,6 +156,19 @@ export async function POST(request: NextRequest) {
     let downloadToken = order.downloadToken;
     if (!downloadToken) {
       downloadToken = generateDownloadToken();
+    }
+
+    // ✅ MARCAR COMO PROCESADO EN CACHE ANTES DE ACTUALIZAR DB
+    processedPayments.set(cacheKey, now);
+
+    // Limpiar cache viejo (> 1 hora)
+    if (processedPayments.size > 500) {
+      const oneHourAgo = now - 3600000;
+      for (const [key, time] of processedPayments.entries()) {
+        if (time < oneHourAgo) {
+          processedPayments.delete(key);
+        }
+      }
     }
 
     // Actualizar orden
@@ -254,8 +299,8 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "active",
-    message: "Unicobros webhook endpoint",
-    version: "3.0",
+    message: "Unicobros webhook endpoint with rate limiting",
+    version: "3.1",
     timestamp: new Date().toISOString(),
   });
 }
