@@ -30,13 +30,13 @@ export interface UnicobrosPayment {
   total?: number;
   currency?: string;
   created?: number;
+  // otros campos pueden existir
 }
 
 type JsonRecord = Record<string, unknown>;
 function isRecord(v: unknown): v is JsonRecord {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
-
 function hasId(v: unknown): v is { id: string | number } {
   return (
     isRecord(v) &&
@@ -47,6 +47,7 @@ function hasId(v: unknown): v is { id: string | number } {
 
 /**
  * Crea un checkout en Unicobros
+ * (Formato tipo Mobbex: total/currency/reference/description/items(total)/return_url/webhook)
  */
 export async function createPreference(
   params: CreateCheckoutParams,
@@ -62,59 +63,25 @@ export async function createPreference(
     );
   }
 
-  const payer: Record<string, unknown> = {
-    name: params.buyerName,
-    email: params.buyerEmail,
-  };
+  const total = params.totalAmount;
 
-  if (params.buyerPhone) payer.phone = { number: params.buyerPhone };
-
-  if (params.buyerDni) {
-    payer.identification = {
-      type: "DNI",
-      number: params.buyerDni,
-    };
-  }
-
-  const body: Record<string, unknown> = {
-    currency_id: "ARS",
-    amount: params.totalAmount,
-    total: params.totalAmount,
+  const checkout: Record<string, unknown> = {
+    total,
+    currency: "ARS",
     reference: params.orderId,
-    external_reference: params.orderId,
-
+    description: `Orden ${params.orderNumber} - ${params.quantity} entrada(s)`,
     items: [
       {
-        id: "entrada-carnaval",
-        title: `Entrada Carnavales Makallé 2026`,
-        description: `${params.quantity} entrada(s)`,
         quantity: params.quantity,
-        unit_price: params.unitPrice,
-        currency_id: "ARS",
+        description: "Entrada Carnavales Makallé 2026",
+        total,
       },
     ],
-
-    payer,
-
-    back_urls: {
-      success: params.successUrl,
-      failure: params.failureUrl,
-      pending: params.pendingUrl,
-    },
-
-    notification_url: params.notificationUrl,
-
-    metadata: {
-      orderId: params.orderId,
-      orderNumber: params.orderNumber,
-    },
+    return_url: params.successUrl,
+    webhook: params.notificationUrl,
   };
 
-  console.log("🚀 Creando checkout en Unicobros:", {
-    orderId: params.orderId,
-    amount: params.totalAmount,
-    email: params.buyerEmail,
-  });
+  console.log("🚀 Creando checkout en Unicobros (payload real):", checkout);
 
   const endpoint = `${baseUrl}/p/checkout`;
 
@@ -125,7 +92,7 @@ export async function createPreference(
       "x-api-key": apiKey,
       "x-access-token": accessToken,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(checkout),
   });
 
   const contentType = response.headers.get("content-type") || "";
@@ -154,7 +121,7 @@ export async function createPreference(
     throw new Error(`Respuesta inesperada de Unicobros: ${raw}`);
   }
 
-  // Unicobros puede mandar 200 con result=false
+  // 200 con result=false
   if (parsed.result === false) {
     const code = typeof parsed.code === "string" ? parsed.code : "UNKNOWN";
     const err = typeof parsed.error === "string" ? parsed.error : "Error";
@@ -165,8 +132,7 @@ export async function createPreference(
 
   const id =
     (obj.id as string | number | undefined) ??
-    (obj.checkout_id as string | number | undefined) ??
-    (obj.preference_id as string | number | undefined);
+    (obj.checkout_id as string | number | undefined);
 
   const url =
     (obj.url as string | undefined) ??
@@ -189,7 +155,7 @@ export async function createPreference(
 }
 
 /**
- * Obtiene el estado de un pago
+ * Obtiene estado de pago (para cron)
  */
 export async function getPaymentStatus(
   paymentId: string,
@@ -215,15 +181,26 @@ export async function getPaymentStatus(
       },
     });
 
+    const contentType = response.headers.get("content-type") || "";
+    const raw = await response.text();
+
     if (!response.ok) {
-      const txt = await response.text().catch(() => "");
       return {
         success: false,
-        error: `Error ${response.status}${txt ? `: ${txt}` : ""}`,
+        error: `Error ${response.status}${raw ? `: ${raw}` : ""}`,
       };
     }
 
-    const parsed: unknown = await response.json();
+    if (!contentType.includes("application/json")) {
+      return { success: false, error: `Respuesta no-JSON: ${raw}` };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { success: false, error: `JSON inválido: ${raw}` };
+    }
 
     if (!isRecord(parsed)) {
       return { success: false, error: "Respuesta inválida" };
@@ -237,16 +214,11 @@ export async function getPaymentStatus(
 
     const dataUnknown: unknown = parsed.data;
 
-    // ✅ Validación real: solo devolvemos payment si tiene id
     if (!hasId(dataUnknown)) {
-      return {
-        success: false,
-        error: "Respuesta inválida: falta data.id",
-      };
+      return { success: false, error: "Respuesta inválida: falta data.id" };
     }
 
-    const data = dataUnknown as UnicobrosPayment;
-    return { success: true, payment: data };
+    return { success: true, payment: dataUnknown as UnicobrosPayment };
   } catch (error) {
     return {
       success: false,
@@ -256,7 +228,7 @@ export async function getPaymentStatus(
 }
 
 /**
- * Mapea estados de Unicobros (números) a estados internos
+ * Mapeos (los usa payment-confirm.ts)
  */
 export function mapMPStatusToInternal(
   status: number | string,
@@ -279,9 +251,6 @@ export function mapMPStatusToInternal(
   }
 }
 
-/**
- * Mapea estados de Unicobros a estados de pago
- */
 export function mapMPStatusToPaymentStatus(
   status: number | string,
 ): "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED" {
@@ -305,7 +274,7 @@ export function mapMPStatusToPaymentStatus(
 }
 
 /**
- * Verifica webhook (placeholder básico)
+ * Verifica webhook (placeholder)
  */
 export function verifyWebhookSignature(payload: unknown): boolean {
   if (!payload || typeof payload !== "object") return false;
