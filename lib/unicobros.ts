@@ -48,19 +48,37 @@ export async function createPreference(
 
   // Body según documentación oficial de Unicobros
   const body = {
-    total: params.totalAmount, // Número directo
-    description: `🎭 Carnavales Makallé 2026 - ${params.quantity} Entrada(s) - Orden ${params.orderNumber}`,
-    reference: params.orderId,
-    currency: "ARS",
-    test: process.env.NODE_ENV !== "production",
-    return_url: params.successUrl,
-    webhook: params.notificationUrl,
-    customer: {
-      email: params.buyerEmail,
+    items: [
+      {
+        id: "entrada-carnaval",
+        title: `Entrada Carnavales Makallé 2026`,
+        description: `${params.quantity} entrada(s)`,
+        quantity: params.quantity,
+        unit_price: params.unitPrice,
+        currency_id: "ARS",
+      },
+    ],
+    payer: {
       name: params.buyerName,
-      identification: params.buyerDni || "00000000",
-      ...(params.buyerPhone && { phone: params.buyerPhone }),
+      email: params.buyerEmail,
+      phone: params.buyerPhone
+        ? {
+            area_code: "",
+            number: params.buyerPhone,
+          }
+        : undefined,
+      identification: {
+        type: "DNI",
+        number: params.buyerDni || "00000000",
+      },
     },
+    back_urls: {
+      success: params.successUrl,
+      failure: params.failureUrl,
+      pending: params.pendingUrl,
+    },
+    notification_url: params.notificationUrl,
+    external_reference: params.orderId,
   };
 
   console.log("🚀 Creando checkout en Unicobros:", {
