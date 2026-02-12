@@ -2,11 +2,13 @@
 /**
  * Webhook de Unicobros - REFACTORIZADO
  *
- * Ahora delega toda la lógica de confirmación a confirmPayment().
- * Solo se encarga de parsear el payload y extraer los datos.
+ * Ahora:
+ *  - guarda siempre el paymentId (mercadoPagoId) y status en la orden si puede
+ *  - confirma SOLO si status=200
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { confirmPayment } from "@/lib/payment-confirm";
 
 interface WebhookBody {
@@ -35,7 +37,6 @@ export async function POST(request: NextRequest) {
   try {
     const rawBody: unknown = await request.json();
 
-    // Validar estructura mínima
     if (!rawBody || typeof rawBody !== "object") {
       console.log("[webhook] ⏭️ Body vacío o inválido");
       return new NextResponse(null, { status: 200 });
@@ -49,7 +50,6 @@ export async function POST(request: NextRequest) {
       return new NextResponse(null, { status: 200 });
     }
 
-    // Log del payload completo para debug
     console.log("[webhook] 🧾 Payload:", JSON.stringify(payment, null, 2));
 
     const paymentId = String(payment.id);
@@ -64,13 +64,29 @@ export async function POST(request: NextRequest) {
 
     const statusNum = parseStatusNum(payment);
 
-    // Solo procesar si es aprobado (200)
+    // ✅ Guardar SIEMPRE paymentId + status (aunque no sea 200)
+    // Esto hace que el cron tenga un id real para consultar /operations
+    try {
+      await prisma.order.update({
+        where: { id: orderId },
+        data: {
+          mercadoPagoId: paymentId,
+          mercadoPagoStatus: String(statusNum),
+        },
+      });
+    } catch (e) {
+      console.log(
+        "[webhook] ⚠️ No se pudo actualizar orden (quizá no existe):",
+        e,
+      );
+      // Igual devolvemos 200
+    }
+
     if (statusNum !== 200) {
       console.log(`[webhook] ⏭️ Status no aprobado: ${statusNum}`);
       return new NextResponse(null, { status: 200 });
     }
 
-    // Delegar a confirmPayment()
     const result = await confirmPayment({
       orderId,
       paymentId,
@@ -80,7 +96,6 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       console.error(`[webhook] ❌ Error confirmando: ${result.error}`);
-      // Retornar 200 igualmente para que Unicobros no reintente
       return new NextResponse(null, { status: 200 });
     }
 
@@ -94,7 +109,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("[webhook] ❌ Error:", error);
-    // Siempre retornar 200 para evitar que Unicobros reintente indefinidamente
     return new NextResponse(null, { status: 200 });
   }
 }
@@ -102,8 +116,8 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "active",
-    message: "Unicobros webhook endpoint (v5 - centralized confirm)",
-    version: "5.0",
+    message: "Unicobros webhook endpoint (v6 - persists paymentId/status)",
+    version: "6.0",
     timestamp: new Date().toISOString(),
   });
 }

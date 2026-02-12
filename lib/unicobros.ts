@@ -20,13 +20,22 @@ interface CreateCheckoutParams {
   notificationUrl: string;
 }
 
-interface UnicobrosPayment {
+export interface UnicobrosPayment {
   id: string | number;
-  status: number;
+  status?: number | string | { code?: number | string };
+  status_code?: number | string;
+  code?: number | string;
+  reference?: string;
   external_reference?: string;
   total?: number;
   currency?: string;
   created?: number;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(v: unknown): v is JsonRecord {
+  return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
 /**
@@ -46,7 +55,6 @@ export async function createPreference(
     );
   }
 
-  // Body según documentación oficial de Unicobros
   const body = {
     items: [
       {
@@ -62,10 +70,7 @@ export async function createPreference(
       name: params.buyerName,
       email: params.buyerEmail,
       phone: params.buyerPhone
-        ? {
-            area_code: "",
-            number: params.buyerPhone,
-          }
+        ? { area_code: "", number: params.buyerPhone }
         : undefined,
       identification: {
         type: "DNI",
@@ -87,45 +92,72 @@ export async function createPreference(
     email: params.buyerEmail,
   });
 
-  // Endpoint oficial
   const endpoint = `${baseUrl}/p/checkout`;
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "x-access-token": accessToken,
-      },
-      body: JSON.stringify(body),
-    });
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "x-access-token": accessToken,
+    },
+    body: JSON.stringify(body),
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ Error de Unicobros:", {
-        status: response.status,
-        body: errorText,
-      });
-      throw new Error(`Error de Unicobros (${response.status}): ${errorText}`);
-    }
+  const contentType = response.headers.get("content-type") || "";
+  const raw = await response.text();
 
-    const data = await response.json();
+  console.log("UNICOBROS status:", response.status);
+  console.log("UNICOBROS content-type:", contentType);
+  console.log("UNICOBROS raw body:", raw);
 
-    console.log("✅ Checkout creado:", {
-      id: data.data?.id,
-      url: data.data?.url,
-    });
-
-    return {
-      id: data.data.id,
-      init_point: data.data.url,
-      external_reference: params.orderId,
-    };
-  } catch (error) {
-    console.error("❌ Error creando checkout:", error);
-    throw error;
+  if (!response.ok) {
+    throw new Error(`Error de Unicobros (${response.status}): ${raw}`);
   }
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(`Unicobros devolvió no-JSON: ${raw}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`Unicobros devolvió JSON inválido: ${raw}`);
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error(`Respuesta inesperada de Unicobros: ${raw}`);
+  }
+
+  const root = parsed;
+  const obj = isRecord(root.data)
+    ? (root.data as JsonRecord)
+    : (root as JsonRecord);
+
+  const id =
+    (obj.id as string | number | undefined) ??
+    (obj.checkout_id as string | number | undefined) ??
+    (obj.preference_id as string | number | undefined);
+
+  const url =
+    (obj.url as string | undefined) ??
+    (obj.init_point as string | undefined) ??
+    (obj.checkout_url as string | undefined) ??
+    (obj.payment_url as string | undefined) ??
+    (obj.redirect_url as string | undefined);
+
+  if (!id || !url) {
+    throw new Error(
+      `Unicobros: respuesta sin id/url. Keys: ${Object.keys(obj).join(", ")} | raw: ${raw.slice(0, 800)}`,
+    );
+  }
+
+  return {
+    id: String(id),
+    init_point: String(url),
+    external_reference: params.orderId,
+  };
 }
 
 /**
@@ -140,10 +172,7 @@ export async function getPaymentStatus(
     process.env.UNICOBROS_BASE_URL || "https://api.unicobros.com.ar";
 
   if (!apiKey || !accessToken) {
-    return {
-      success: false,
-      error: "Credenciales no configuradas",
-    };
+    return { success: false, error: "Credenciales no configuradas" };
   }
 
   const endpoint = `${baseUrl}/p/operations/${paymentId}`;
@@ -159,11 +188,24 @@ export async function getPaymentStatus(
     });
 
     if (!response.ok) {
-      return { success: false, error: `Error ${response.status}` };
+      const txt = await response.text().catch(() => "");
+      return {
+        success: false,
+        error: `Error ${response.status}${txt ? `: ${txt}` : ""}`,
+      };
     }
 
-    const data = await response.json();
-    return { success: true, payment: data.data };
+    const parsed: unknown = await response.json();
+
+    if (!isRecord(parsed)) {
+      return { success: false, error: "Respuesta inválida" };
+    }
+
+    const data = isRecord(parsed.data)
+      ? (parsed.data as unknown as UnicobrosPayment)
+      : undefined;
+
+    return { success: true, payment: data };
   } catch (error) {
     return {
       success: false,
@@ -178,7 +220,7 @@ export async function getPaymentStatus(
 export function mapMPStatusToInternal(
   status: number | string,
 ): "PENDING_PAYMENT" | "PAID" | "VALIDATED" | "CANCELLED" {
-  const statusNum = typeof status === "string" ? parseInt(status) : status;
+  const statusNum = typeof status === "string" ? parseInt(status, 10) : status;
 
   switch (statusNum) {
     case 200:
@@ -202,7 +244,7 @@ export function mapMPStatusToInternal(
 export function mapMPStatusToPaymentStatus(
   status: number | string,
 ): "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED" {
-  const statusNum = typeof status === "string" ? parseInt(status) : status;
+  const statusNum = typeof status === "string" ? parseInt(status, 10) : status;
 
   switch (statusNum) {
     case 200:
@@ -222,12 +264,10 @@ export function mapMPStatusToPaymentStatus(
 }
 
 /**
- * Verifica webhook (básico)
+ * Verifica webhook (placeholder básico)
+ * (cuando implementes firma real, sumale un param y usalo)
  */
-export function verifyWebhookSignature(
-  payload: unknown,
-  signature?: string,
-): boolean {
+export function verifyWebhookSignature(payload: unknown): boolean {
   if (!payload || typeof payload !== "object") return false;
   const data = payload as Record<string, unknown>;
   return !!data.payment;

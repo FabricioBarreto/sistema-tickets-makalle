@@ -1,31 +1,14 @@
 // app/api/cron/verify-pending/route.ts
-/**
- * Cron job para verificar órdenes pendientes.
- *
- * Busca órdenes PENDING con más de 2 minutos de antigüedad
- * y que tengan mercadoPagoId (transactionId), luego consulta
- * la API de Unicobros para verificar su estado.
- *
- * Uso:
- *   - Vercel Cron: configurar en vercel.json cada 5 minutos
- *   - Manual: GET /api/cron/verify-pending?secret=TU_CRON_SECRET
- *
- * Seguridad:
- *   - Requiere header Authorization o query param ?secret=
- *   - El secret se configura en CRON_SECRET env var
- */
-
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getPaymentStatus } from "@/lib/unicobros";
 import { confirmPayment } from "@/lib/payment-confirm";
 
-export const maxDuration = 30; // Vercel: máximo 30 segundos
+export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    // Verificar autorización
     const cronSecret = process.env.CRON_SECRET;
     if (cronSecret) {
       const authHeader = request.headers.get("authorization");
@@ -42,7 +25,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Buscar órdenes PENDING con mercadoPagoId y más de 2 minutos
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -51,8 +33,8 @@ export async function GET(request: NextRequest) {
         paymentStatus: "PENDING",
         mercadoPagoId: { not: null },
         createdAt: {
-          gte: twentyFourHoursAgo, // No más de 24 horas
-          lte: twoMinutesAgo, // Al menos 2 minutos
+          gte: twentyFourHoursAgo,
+          lte: twoMinutesAgo,
         },
       },
       select: {
@@ -61,8 +43,8 @@ export async function GET(request: NextRequest) {
         mercadoPagoId: true,
         createdAt: true,
       },
-      take: 20, // Procesar máximo 20 por ejecución
-      orderBy: { createdAt: "asc" }, // Las más viejas primero
+      take: 20,
+      orderBy: { createdAt: "asc" },
     });
 
     console.log(
@@ -81,6 +63,7 @@ export async function GET(request: NextRequest) {
     let confirmed = 0;
     let failed = 0;
     let stillPending = 0;
+
     const results: Array<{
       orderNumber: string;
       status: string;
@@ -89,22 +72,40 @@ export async function GET(request: NextRequest) {
 
     for (const order of pendingOrders) {
       try {
-        const transactionId = order.mercadoPagoId!;
+        const transactionId =
+          order.mercadoPagoId?.trim?.() ?? String(order.mercadoPagoId || "");
+        if (!transactionId) {
+          results.push({
+            orderNumber: order.orderNumber,
+            status: "skipped",
+            action: "mercadoPagoId vacío",
+          });
+          continue;
+        }
+
         console.log(
           `[cron] 🔍 Verificando: ${order.orderNumber} → ${transactionId}`,
         );
 
-        // Consultar Unicobros
         const paymentResult = await getPaymentStatus(transactionId);
 
         if (!paymentResult.success || !paymentResult.payment) {
-          console.log(
-            `[cron] ⚠️ No se pudo consultar: ${order.orderNumber} - ${paymentResult.error}`,
-          );
+          const err = paymentResult.error || "unknown";
+
+          if (err.includes("404")) {
+            results.push({
+              orderNumber: order.orderNumber,
+              status: "no_operation_id",
+              action:
+                "No existe en /operations (probable checkoutId o id inválido).",
+            });
+            continue;
+          }
+
           results.push({
             orderNumber: order.orderNumber,
             status: "error",
-            action: `API error: ${paymentResult.error}`,
+            action: `API error: ${err}`,
           });
           continue;
         }
@@ -113,7 +114,6 @@ export async function GET(request: NextRequest) {
         const statusNum = parseStatusNum(payment);
 
         if (statusNum === 200) {
-          // Aprobado → confirmar
           const confirmResult = await confirmPayment({
             orderId: order.id,
             paymentId: String(payment.id || transactionId),
@@ -136,7 +136,6 @@ export async function GET(request: NextRequest) {
             });
           }
         } else if (statusNum === 0 || statusNum === 3 || statusNum === 401) {
-          // Rechazado → marcar como FAILED
           failed++;
           await prisma.order.update({
             where: { id: order.id },
@@ -156,7 +155,6 @@ export async function GET(request: NextRequest) {
             action: `Pago rechazado (status=${statusNum})`,
           });
         } else {
-          // Pendiente todavía
           stillPending++;
           results.push({
             orderNumber: order.orderNumber,
@@ -165,7 +163,6 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        // Pequeño delay entre consultas para no saturar la API
         await new Promise((r) => setTimeout(r, 500));
       } catch (err) {
         console.error(`[cron] ❌ Error procesando ${order.orderNumber}:`, err);
@@ -198,6 +195,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
 function parseStatusNum(payment: {
   status?: unknown;
   status_code?: unknown;

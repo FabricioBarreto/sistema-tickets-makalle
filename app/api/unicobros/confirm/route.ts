@@ -3,13 +3,7 @@
  * Endpoint de confirmación server-side.
  *
  * Se llama desde /checkout/success para confirmar el pago.
- * En modo emergencia, NO consulta Unicobros: usa el status de retorno (status=200).
- *
- * Query params:
- *   - orderId: ID de la orden
- *   - status: código de retorno (ej: 200)
- *   - code: alias de status (por compatibilidad)
- *   - transactionId / transaction_id / id: opcional (solo auditoría)
+ * Ahora: NO confirma "porque sí". Requiere transactionId o que el webhook ya haya guardado mercadoPagoId.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,8 +12,8 @@ import { confirmPayment } from "@/lib/payment-confirm";
 
 // Rate limit simple por orderId
 const confirmAttempts = new Map<string, { count: number; firstAt: number }>();
-const MAX_CONFIRM_ATTEMPTS = 20; // máximo 20 intentos por orden
-const CONFIRM_WINDOW_MS = 5 * 60 * 1000; // ventana de 5 minutos
+const MAX_CONFIRM_ATTEMPTS = 20;
+const CONFIRM_WINDOW_MS = 5 * 60 * 1000;
 
 function checkConfirmRateLimit(orderId: string): boolean {
   const now = Date.now();
@@ -52,11 +46,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get("orderId");
 
-    // status puede venir como status o code
     const statusParam = searchParams.get("status") || searchParams.get("code");
     const statusNum = statusParam ? parseInt(statusParam, 10) : NaN;
 
-    // transactionId solo para auditoría (no se valida contra Unicobros)
     const transactionId =
       searchParams.get("transactionId") ||
       searchParams.get("transaction_id") ||
@@ -84,6 +76,7 @@ export async function GET(request: NextRequest) {
         orderNumber: true,
         paymentStatus: true,
         downloadToken: true,
+        mercadoPagoId: true,
       },
     });
 
@@ -94,7 +87,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Si ya está confirmada, devolvemos
     if (order.paymentStatus === "COMPLETED") {
       return NextResponse.json({
         success: true,
@@ -105,13 +97,32 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ✅ Confirmación por retorno: status=200
+    // ✅ Confirmación por retorno (pero con guard rails)
     if (statusNum === 200) {
+      const paymentIdToUse = transactionId
+        ? String(transactionId)
+        : order.mercadoPagoId;
+
+      // 🔒 Si no tenemos ningún id real, no confirmamos
+      if (!paymentIdToUse) {
+        return NextResponse.json({
+          success: true,
+          status: "PENDING",
+          message: "Esperando webhook/transactionId para confirmar",
+        });
+      }
+
+      // Si vino transactionId y aún no lo teníamos guardado, lo persistimos
+      if (transactionId && order.mercadoPagoId !== String(transactionId)) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { mercadoPagoId: String(transactionId) },
+        });
+      }
+
       const result = await confirmPayment({
         orderId: order.id,
-        paymentId: transactionId
-          ? String(transactionId)
-          : `RETURN-200-${Date.now()}`,
+        paymentId: String(paymentIdToUse),
         statusNum: 200,
         source: "success_page",
       });
@@ -139,7 +150,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Si no viene status=200, queda pendiente
     return NextResponse.json({
       success: true,
       status: "PENDING",

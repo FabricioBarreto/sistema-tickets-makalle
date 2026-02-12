@@ -1,12 +1,4 @@
 // app/api/unicobros/preference/route.ts
-/**
- * CAMBIO CLAVE: El successUrl ahora incluye un placeholder para transactionId.
- *
- * Unicobros normalmente agrega parámetros a la URL de retorno (como transactionId).
- * Pero por si no lo hace, también guardamos el checkout ID de Unicobros como
- * mercadoPagoId en la orden, para que el cron pueda consultarlo después.
- */
-
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPreference } from "@/lib/unicobros";
@@ -130,10 +122,22 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // ✅ Idempotencia simple: si ya guardaste un id (checkout u operation), no recrees
+    // (Si querés mejorarlo: guardá también initPoint en DB y devolvelo acá)
+    if (order.mercadoPagoId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Ya existe un checkout/operación asociado a esta orden. Si el pago no se refleja, esperá el webhook o reintentá más tarde.",
+        },
+        { status: 409 },
+      );
+    }
+
     const rawUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const appUrl = normalizeUrl(rawUrl);
 
-    // ✅ CAMBIO: successUrl incluye orderId para que success page pueda verificar
     const successUrl = `${appUrl}/checkout/success?orderId=${orderId}`;
     const failureUrl = `${appUrl}/checkout/failure?orderId=${orderId}`;
     const pendingUrl = `${appUrl}/checkout/pending?orderId=${orderId}`;
@@ -162,12 +166,11 @@ export async function POST(request: NextRequest) {
     });
 
     console.log("✅ Checkout creado:", {
-      id: preference.id,
-      url: preference.init_point,
+      id: preference?.id,
+      url: preference?.init_point,
     });
 
-    // ✅ NUEVO: Guardar el ID del checkout de Unicobros en la orden
-    // Esto permite al cron consultar el estado aunque no llegue webhook ni transactionId
+    // ⚠️ Guardamos el id que nos dio /p/checkout (puede ser checkoutId)
     await prisma.order.update({
       where: { id: order.id },
       data: {
