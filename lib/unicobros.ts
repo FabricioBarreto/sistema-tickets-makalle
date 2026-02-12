@@ -85,7 +85,6 @@ export async function createPreference(
     orderId: params.orderId,
     amount: params.totalAmount,
     email: params.buyerEmail,
-    test: body.test,
   });
 
   // Endpoint oficial
