@@ -33,9 +33,16 @@ export interface UnicobrosPayment {
 }
 
 type JsonRecord = Record<string, unknown>;
-
 function isRecord(v: unknown): v is JsonRecord {
   return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function hasId(v: unknown): v is { id: string | number } {
+  return (
+    isRecord(v) &&
+    "id" in v &&
+    (typeof v.id === "string" || typeof v.id === "number")
+  );
 }
 
 /**
@@ -55,7 +62,27 @@ export async function createPreference(
     );
   }
 
-  const body = {
+  const payer: Record<string, unknown> = {
+    name: params.buyerName,
+    email: params.buyerEmail,
+  };
+
+  if (params.buyerPhone) payer.phone = { number: params.buyerPhone };
+
+  if (params.buyerDni) {
+    payer.identification = {
+      type: "DNI",
+      number: params.buyerDni,
+    };
+  }
+
+  const body: Record<string, unknown> = {
+    currency_id: "ARS",
+    amount: params.totalAmount,
+    total: params.totalAmount,
+    reference: params.orderId,
+    external_reference: params.orderId,
+
     items: [
       {
         id: "entrada-carnaval",
@@ -66,24 +93,21 @@ export async function createPreference(
         currency_id: "ARS",
       },
     ],
-    payer: {
-      name: params.buyerName,
-      email: params.buyerEmail,
-      phone: params.buyerPhone
-        ? { area_code: "", number: params.buyerPhone }
-        : undefined,
-      identification: {
-        type: "DNI",
-        number: params.buyerDni || "00000000",
-      },
-    },
+
+    payer,
+
     back_urls: {
       success: params.successUrl,
       failure: params.failureUrl,
       pending: params.pendingUrl,
     },
+
     notification_url: params.notificationUrl,
-    external_reference: params.orderId,
+
+    metadata: {
+      orderId: params.orderId,
+      orderNumber: params.orderNumber,
+    },
   };
 
   console.log("🚀 Creando checkout en Unicobros:", {
@@ -130,10 +154,14 @@ export async function createPreference(
     throw new Error(`Respuesta inesperada de Unicobros: ${raw}`);
   }
 
-  const root = parsed;
-  const obj = isRecord(root.data)
-    ? (root.data as JsonRecord)
-    : (root as JsonRecord);
+  // Unicobros puede mandar 200 con result=false
+  if (parsed.result === false) {
+    const code = typeof parsed.code === "string" ? parsed.code : "UNKNOWN";
+    const err = typeof parsed.error === "string" ? parsed.error : "Error";
+    throw new Error(`Unicobros ${code}: ${err}`);
+  }
+
+  const obj = isRecord(parsed.data) ? (parsed.data as JsonRecord) : parsed;
 
   const id =
     (obj.id as string | number | undefined) ??
@@ -201,10 +229,23 @@ export async function getPaymentStatus(
       return { success: false, error: "Respuesta inválida" };
     }
 
-    const data = isRecord(parsed.data)
-      ? (parsed.data as unknown as UnicobrosPayment)
-      : undefined;
+    if (parsed.result === false) {
+      const code = typeof parsed.code === "string" ? parsed.code : "UNKNOWN";
+      const err = typeof parsed.error === "string" ? parsed.error : "Error";
+      return { success: false, error: `Unicobros ${code}: ${err}` };
+    }
 
+    const dataUnknown: unknown = parsed.data;
+
+    // ✅ Validación real: solo devolvemos payment si tiene id
+    if (!hasId(dataUnknown)) {
+      return {
+        success: false,
+        error: "Respuesta inválida: falta data.id",
+      };
+    }
+
+    const data = dataUnknown as UnicobrosPayment;
     return { success: true, payment: data };
   } catch (error) {
     return {
@@ -265,7 +306,6 @@ export function mapMPStatusToPaymentStatus(
 
 /**
  * Verifica webhook (placeholder básico)
- * (cuando implementes firma real, sumale un param y usalo)
  */
 export function verifyWebhookSignature(payload: unknown): boolean {
   if (!payload || typeof payload !== "object") return false;
