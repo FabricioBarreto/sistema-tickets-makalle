@@ -57,10 +57,14 @@ function normalizeUrl(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+function isValidPositiveNumber(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { orderId } = body;
+    const body = (await request.json()) as { orderId?: string };
+    const orderId = body.orderId;
 
     if (!orderId) {
       return NextResponse.json(
@@ -69,7 +73,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Rate limit
     const rateLimit = checkPreferenceRateLimit(orderId);
     if (!rateLimit.allowed) {
       if (rateLimit.blocked) {
@@ -94,7 +97,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Buscar orden
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: { tickets: true },
@@ -122,8 +124,40 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ✅ Idempotencia simple: si ya guardaste un id (checkout u operation), no recrees
-    // (Si querés mejorarlo: guardá también initPoint en DB y devolvelo acá)
+    // ✅ quantity REAL (no dependas de un campo que puede ser null)
+    const quantity = order.tickets.length;
+
+    // ✅ totalAmount REAL
+    const totalAmount = Number(order.totalAmount);
+
+    // ✅ unitPrice: usa el de DB si sirve, si no calcula
+    const unitPriceFromDb = Number(order.unitPrice);
+    const unitPrice =
+      Number.isFinite(unitPriceFromDb) && unitPriceFromDb > 0
+        ? unitPriceFromDb
+        : totalAmount / quantity;
+
+    // ✅ Validación fuerte (esto te evita MRPERR)
+    if (!isValidPositiveNumber(totalAmount)) {
+      return NextResponse.json(
+        { success: false, error: "totalAmount inválido" },
+        { status: 400 },
+      );
+    }
+    if (!isValidPositiveNumber(unitPrice)) {
+      return NextResponse.json(
+        { success: false, error: "unitPrice inválido (NaN/0/null)" },
+        { status: 400 },
+      );
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      return NextResponse.json(
+        { success: false, error: "quantity inválida" },
+        { status: 400 },
+      );
+    }
+
+    // Idempotencia simple
     if (order.mercadoPagoId) {
       return NextResponse.json(
         {
@@ -143,18 +177,21 @@ export async function POST(request: NextRequest) {
     const pendingUrl = `${appUrl}/checkout/pending?orderId=${orderId}`;
     const notificationUrl = `${appUrl}/api/unicobros/webhook`;
 
-    console.log("🚀 Creando checkout en Unicobros:", {
+    // 🔎 Log de los números reales que viajan a Unicobros
+    console.log("🚀 Unicobros payload numbers:", {
       orderId: order.id,
-      amount: Number(order.totalAmount),
+      totalAmount,
+      quantity,
+      unitPrice,
       email: order.buyerEmail,
     });
 
     const preference = await createPreference({
       orderId: order.id,
       orderNumber: order.orderNumber,
-      quantity: order.quantity,
-      unitPrice: Number(order.unitPrice),
-      totalAmount: Number(order.totalAmount),
+      quantity,
+      unitPrice,
+      totalAmount,
       buyerEmail: order.buyerEmail,
       buyerName: order.buyerName,
       buyerPhone: order.buyerPhone || undefined,
@@ -166,11 +203,10 @@ export async function POST(request: NextRequest) {
     });
 
     console.log("✅ Checkout creado:", {
-      id: preference?.id,
-      url: preference?.init_point,
+      id: preference.id,
+      url: preference.init_point,
     });
 
-    // ⚠️ Guardamos el id que nos dio /p/checkout (puede ser checkoutId)
     await prisma.order.update({
       where: { id: order.id },
       data: {

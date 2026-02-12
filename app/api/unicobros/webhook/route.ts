@@ -1,32 +1,65 @@
 // app/api/unicobros/webhook/route.ts
 /**
- * Webhook de Unicobros - REFACTORIZADO
+ * Webhook de Unicobros - tolerante a formatos de payload
  *
- * Ahora:
- *  - guarda siempre el paymentId (mercadoPagoId) y status en la orden si puede
- *  - confirma SOLO si status=200
+ * - Acepta payment en body.data.payment o body.payment
+ * - Extrae orderId de external_reference, reference o metadata.orderId
+ * - Guarda siempre paymentId + status en la orden
+ * - Confirma SOLO si status=200
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { confirmPayment } from "@/lib/payment-confirm";
 
-interface WebhookBody {
-  type?: string;
-  data?: {
-    payment?: Record<string, unknown>;
-  };
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(v: unknown): v is JsonRecord {
+  return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
-function parseStatusNum(payment: Record<string, unknown>): number {
-  const status = payment?.status;
+function getPaymentFromPayload(raw: unknown): JsonRecord | undefined {
+  if (!isRecord(raw)) return undefined;
+
+  // Caso 1: { data: { payment: {...} } }
+  const data = isRecord(raw.data) ? (raw.data as JsonRecord) : undefined;
+  const paymentInData =
+    data && isRecord(data.payment) ? (data.payment as JsonRecord) : undefined;
+  if (paymentInData) return paymentInData;
+
+  // Caso 2: { payment: {...} }
+  const paymentTop = isRecord(raw.payment)
+    ? (raw.payment as JsonRecord)
+    : undefined;
+  if (paymentTop) return paymentTop;
+
+  return undefined;
+}
+
+function getOrderIdFromPayment(payment: JsonRecord): string {
+  const ext = payment.external_reference;
+  if (typeof ext === "string" && ext.trim()) return ext;
+
+  const ref = payment.reference;
+  if (typeof ref === "string" && ref.trim()) return ref;
+
+  const meta = payment.metadata;
+  if (isRecord(meta)) {
+    const oid = meta.orderId;
+    if (typeof oid === "string" && oid.trim()) return oid;
+  }
+
+  return "";
+}
+
+function parseStatusNum(payment: JsonRecord): number {
+  const status = payment.status;
+
   const statusRaw =
-    (typeof status === "object" && status !== null && "code" in status
-      ? (status as { code: unknown }).code
-      : null) ??
+    (isRecord(status) && "code" in status ? (status.code as unknown) : null) ??
     status ??
-    payment?.status_code ??
-    payment?.code ??
+    payment.status_code ??
+    payment.code ??
     "0";
 
   const n = parseInt(String(statusRaw), 10);
@@ -37,35 +70,32 @@ export async function POST(request: NextRequest) {
   try {
     const rawBody: unknown = await request.json();
 
-    if (!rawBody || typeof rawBody !== "object") {
-      console.log("[webhook] ⏭️ Body vacío o inválido");
+    const payment = getPaymentFromPayload(rawBody);
+    if (!payment) {
+      console.log("[webhook] ⏭️ Sin payment en payload");
       return new NextResponse(null, { status: 200 });
     }
 
-    const body = rawBody as WebhookBody;
-    const payment = body?.data?.payment as Record<string, unknown> | undefined;
-
-    if (!payment || !payment.id) {
-      console.log("[webhook] ⏭️ Sin data.payment.id");
+    if (!("id" in payment) || !payment.id) {
+      console.log("[webhook] ⏭️ Sin payment.id");
       return new NextResponse(null, { status: 200 });
     }
 
-    console.log("[webhook] 🧾 Payload:", JSON.stringify(payment, null, 2));
+    console.log("[webhook] 🧾 Payment:", JSON.stringify(payment, null, 2));
 
     const paymentId = String(payment.id);
-    const orderId = String(
-      payment.reference ?? payment.external_reference ?? "",
-    );
+    const orderId = getOrderIdFromPayment(payment);
 
     if (!orderId) {
-      console.log("[webhook] ⏭️ Sin reference/external_reference");
+      console.log(
+        "[webhook] ⏭️ Sin external_reference/reference/metadata.orderId",
+      );
       return new NextResponse(null, { status: 200 });
     }
 
     const statusNum = parseStatusNum(payment);
 
     // ✅ Guardar SIEMPRE paymentId + status (aunque no sea 200)
-    // Esto hace que el cron tenga un id real para consultar /operations
     try {
       await prisma.order.update({
         where: { id: orderId },
@@ -79,7 +109,6 @@ export async function POST(request: NextRequest) {
         "[webhook] ⚠️ No se pudo actualizar orden (quizá no existe):",
         e,
       );
-      // Igual devolvemos 200
     }
 
     if (statusNum !== 200) {
@@ -116,8 +145,8 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "active",
-    message: "Unicobros webhook endpoint (v6 - persists paymentId/status)",
-    version: "6.0",
+    message: "Unicobros webhook endpoint (v7 - tolerant payload)",
+    version: "7.0",
     timestamp: new Date().toISOString(),
   });
 }
