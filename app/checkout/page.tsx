@@ -253,6 +253,36 @@ function CheckoutContent() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* ✨ VIDEO ARRIBA - Ancho completo */}
+        <div className="mb-8 bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border-2 border-purple-200 p-6 shadow-lg">
+          <h3 className="text-2xl font-black text-purple-900 mb-4 text-center flex items-center justify-center gap-2">
+            ⚡ ¿Cómo funciona? ¡Mirá el video!
+          </h3>
+          
+          {/* Video de Vimeo */}
+          <div className="relative w-full mb-4 rounded-xl overflow-hidden shadow-2xl" style={{ paddingTop: '56.25%' }}>
+            <iframe
+              src="https://player.vimeo.com/video/1164958897?badge=0&autopause=0&player_id=0&app_id=58479&title=0&byline=0&portrait=0"
+              frameBorder="0"
+              allow="autoplay; fullscreen; picture-in-picture; clipboard-write"
+              className="absolute top-0 left-0 w-full h-full"
+              title="Proceso de compra de entradas"
+            />
+          </div>
+
+          {/* Texto descriptivo */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-lg p-4">
+            <p className="text-base text-gray-800 leading-relaxed text-center font-medium">
+              Elegís la cantidad de entradas → Te redirigimos a <strong className="text-purple-700">Unicobros</strong> → Pagás con tu billetera virtual o tarjeta → <strong className="text-purple-700">Esperás 5 segundos</strong> → ¡Descargás tus entradas! 🎟️✨
+            </p>
+            <div className="mt-3 pt-3 border-t border-purple-200">
+              <p className="text-sm text-purple-700 font-bold text-center">
+                ⏱️ Todo el proceso toma menos de 1 minuto
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Form Column */}
           <div className="lg:col-span-2">
@@ -383,7 +413,7 @@ function CheckoutContent() {
 
           {/* Summary Column */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-sm p-6 sticky top-24 space-y-4">
+            <div className="bg-white rounded-2xl shadow-sm p-6 sticky top-24">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Resumen</h2>
 
               <div className="space-y-4">
@@ -409,7 +439,7 @@ function CheckoutContent() {
                 </div>
               </div>
 
-              <div className="p-4 bg-blue-50 rounded-lg">
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
                 <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5" />
                   Pago 100% seguro
@@ -420,7 +450,7 @@ function CheckoutContent() {
                 </p>
               </div>
 
-              <div className="p-4 bg-green-50 rounded-lg">
+              <div className="mt-4 p-4 bg-green-50 rounded-lg">
                 <h3 className="font-semibold text-green-900 mb-2">
                   📧 Entrega instantánea
                 </h3>
@@ -430,35 +460,7 @@ function CheckoutContent() {
                 </p>
               </div>
 
-              {/* ✨ Video + Proceso */}
-              <div className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border-2 border-purple-200">
-                <h3 className="font-semibold text-purple-900 mb-3 flex items-center gap-2">
-                  ⚡ Proceso súper rápido
-                </h3>
-                
-                {/* Video de Vimeo - MÁS GRANDE */}
-                <div className="relative w-full mb-4 rounded-lg overflow-hidden shadow-lg" style={{ paddingTop: '177.78%' }}>
-                  <iframe
-                    src="https://player.vimeo.com/video/1164958897?badge=0&autopause=0&player_id=0&app_id=58479&title=0&byline=0&portrait=0"
-                    frameBorder="0"
-                    allow="autoplay; fullscreen; picture-in-picture; clipboard-write"
-                    className="absolute top-0 left-0 w-full h-full"
-                    title="Proceso de compra de entradas"
-                  />
-                </div>
-
-                {/* Texto descriptivo */}
-                <p className="text-sm text-gray-700 leading-relaxed">
-                  Elegís la cantidad de entradas → Te redirigimos a <strong>Unicobros</strong> → Pagás con tu billetera virtual o tarjeta → <strong>Esperás 5 segundos</strong> → ¡Descargás tus entradas! 🎟️✨
-                </p>
-                <div className="mt-3 pt-3 border-t border-purple-200">
-                  <p className="text-xs text-purple-700 font-medium text-center">
-                    Todo el proceso toma menos de 1 minuto ⏱️
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-4 bg-amber-50 border-2 border-amber-200 rounded-lg">
+              <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-lg">
                 <h3 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
                   Aviso importante
