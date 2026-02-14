@@ -21,7 +21,6 @@ function CheckoutContent() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // ✅ Protección anti-duplicados
   const isProcessingRef = useRef(false);
   const lastSubmitTimeRef = useRef(0);
 
@@ -85,14 +84,12 @@ function CheckoutContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // ✅ PROTECCIÓN 1: Evitar doble click
     if (isProcessingRef.current) {
       console.log("⏳ Ya estamos procesando una compra, espera...");
       toast.warning("Ya estamos procesando tu compra, por favor espera");
       return;
     }
 
-    // ✅ PROTECCIÓN 2: Rate limiting (5 segundos entre intentos)
     const now = Date.now();
     const timeSinceLastSubmit = now - lastSubmitTimeRef.current;
     if (timeSinceLastSubmit < 5000) {
@@ -109,13 +106,11 @@ function CheckoutContent() {
       return;
     }
 
-    // Marcar como procesando
     isProcessingRef.current = true;
     lastSubmitTimeRef.current = now;
     setLoading(true);
 
     try {
-      // Normalizar teléfono
       let phone = formData.buyerPhone.replace(/[^0-9+]/g, "");
       if (!phone.startsWith("+")) {
         phone = "+54" + phone;
@@ -123,7 +118,6 @@ function CheckoutContent() {
 
       console.log("📦 Creando orden con teléfono normalizado:", phone);
 
-      // 1) Crear la orden + tickets
       const createRes = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -153,7 +147,6 @@ function CheckoutContent() {
       const { id: orderId } = createData.data;
       console.log("✅ Order ID:", orderId);
 
-      // 2) Crear preferencia de Unicobros
       console.log("💳 Creando preferencia Unicobros...");
       const mpRes = await fetch("/api/unicobros/preference", {
         method: "POST",
@@ -167,7 +160,6 @@ function CheckoutContent() {
       if (!mpRes.ok) {
         const mpData = mpText ? JSON.parse(mpText) : null;
 
-        // ✅ Si está bloqueado, redirigir al inicio
         if (mpData?.blocked || (mpData?.redirect && mpData.redirect === "/")) {
           console.log("🚫 Bloqueado - Redirigiendo al inicio");
           toast.error(
@@ -179,7 +171,6 @@ function CheckoutContent() {
           return;
         }
 
-        // Si es 429 (rate limit), mostrar mensaje específico
         if (mpRes.status === 429) {
           throw new Error(
             mpData?.error ||
@@ -194,7 +185,6 @@ function CheckoutContent() {
       console.log("💳 Data parseado:", mpData);
 
       if (!mpData?.success) {
-        // ✅ Manejar redirección si la orden ya está pagada
         if (mpData?.redirect && mpData.redirect !== "/") {
           console.log("✅ Orden ya pagada - Redirigiendo a success");
           toast.success("Redirigiendo...");
@@ -216,17 +206,14 @@ function CheckoutContent() {
 
       console.log("✅ Redirigiendo a:", mpData.initPoint);
 
-      // 3) Mostrar mensaje de redirección
       toast.success("Redirigiendo al pago...", { duration: 2000 });
 
-      // 4) Redirigir después de un breve delay
       setTimeout(() => {
         window.location.href = mpData.initPoint;
       }, 500);
     } catch (error: unknown) {
       console.error("❌ Error completo:", error);
 
-      // Liberar el lock en caso de error
       isProcessingRef.current = false;
       setLoading(false);
 
@@ -236,7 +223,6 @@ function CheckoutContent() {
         toast.error("Error al procesar la compra");
       }
     }
-    // NO liberamos isProcessingRef aquí porque ya estamos redirigiendo
   };
 
   if (loadingConfig) {
@@ -355,7 +341,7 @@ function CheckoutContent() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2" 
                 >
                   {loading ? (
                     <>
@@ -444,16 +430,26 @@ function CheckoutContent() {
                 </p>
               </div>
 
-              {/* ✨ Proceso simple y rápido */}
+              {/* ✨ Video + Proceso */}
               <div className="mt-4 p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border-2 border-purple-200">
                 <h3 className="font-semibold text-purple-900 mb-3 flex items-center gap-2">
                   ⚡ Proceso súper rápido
                 </h3>
+                
+                {/* Video de Vimeo */}
+                <div className="relative rounded-lg overflow-hidden shadow-md mb-4" style={{ paddingBottom: '56.25%', height: 0 }}>
+                  <iframe
+                    src="https://player.vimeo.com/video/1164958897?badge=0&autopause=0&player_id=0&app_id=58479"
+                    frameBorder="0"
+                    allow="autoplay; fullscreen; picture-in-picture; clipboard-write"
+                    className="absolute top-0 left-0 w-full h-full"
+                    title="Proceso de compra de entradas"
+                  />
+                </div>
+
+                {/* Texto descriptivo */}
                 <p className="text-sm text-gray-700 leading-relaxed">
-                  Elegís la cantidad de entradas → Te redirigimos a{" "}
-                  <strong>Unicobros</strong> → Pagás con tu billetera virtual o
-                  tarjeta → <strong>Esperás 5 segundos</strong> → ¡Descargás tus
-                  entradas! 🎟️✨
+                  Elegís la cantidad de entradas → Te redirigimos a <strong>Unicobros</strong> → Pagás con tu billetera virtual o tarjeta → <strong>Esperás 5 segundos</strong> → ¡Descargás tus entradas! 🎟️✨
                 </p>
                 <div className="mt-3 pt-3 border-t border-purple-200">
                   <p className="text-xs text-purple-700 font-medium text-center">
