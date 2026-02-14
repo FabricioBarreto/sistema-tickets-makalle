@@ -1,4 +1,3 @@
-// app/checkout/page.tsx
 "use client";
 
 import { useState, useEffect, Suspense, useRef } from "react";
@@ -443,6 +442,24 @@ function CheckoutContent() {
                   Recibirás tus entradas con código QR al instante por email
                   después de confirmar el pago.
                 </p>
+              </div>
+
+              {/* ✨ Proceso simple y rápido */}
+              <div className="mt-4 p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border-2 border-purple-200">
+                <h3 className="font-semibold text-purple-900 mb-3 flex items-center gap-2">
+                  ⚡ Proceso súper rápido
+                </h3>
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  Elegís la cantidad de entradas → Te redirigimos a{" "}
+                  <strong>Unicobros</strong> → Pagás con tu billetera virtual o
+                  tarjeta → <strong>Esperás 5 segundos</strong> → ¡Descargás tus
+                  entradas! 🎟️✨
+                </p>
+                <div className="mt-3 pt-3 border-t border-purple-200">
+                  <p className="text-xs text-purple-700 font-medium text-center">
+                    Todo el proceso toma menos de 1 minuto ⏱️
+                  </p>
+                </div>
               </div>
 
               <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-lg">

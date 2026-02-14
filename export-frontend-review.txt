@@ -1,0 +1,1817 @@
+=== APP/PAGE.TSX ===
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Calendar,
+  MapPin,
+  Clock,
+  Ticket,
+  CheckCircle2,
+  Shield,
+  Users,
+  Sparkles,
+  Heart,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
+import Image from "next/image";
+
+interface EventDate {
+  id: string;
+  date: string;
+  name: string;
+}
+
+interface SystemConfig {
+  ticketPrice: number;
+  totalAvailable: number;
+  maxPerPurchase: number;
+  salesEnabled: boolean;
+  eventDates: string | EventDate[];
+  eventName: string;
+  eventLocation: string;
+}
+
+export default function LandingPage() {
+  const router = useRouter();
+  const [config, setConfig] = useState<SystemConfig | null>(null);
+  const [eventDates, setEventDates] = useState<EventDate[]>([]);
+  const [soldCount, setSoldCount] = useState(0);
+  const [quantity, setQuantity] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [currentGalleryIndex, setCurrentGalleryIndex] = useState(0);
+  const [currentScheduleIndex, setCurrentScheduleIndex] = useState(0);
+
+  // Gallery images
+  const galleryImages = [
+    { src: "/img/gallery/hero-1.jpg", alt: "Pasista con traje rosa y plumas" },
+    { src: "/img/gallery/hero-2.jpg", alt: "Pasista con traje rosa y plumas" },
+    { src: "/img/gallery/gallery-3.jpg", alt: "Pasista con traje rosa" },
+    { src: "/img/gallery/gallery-4.jpg", alt: "Pasista con traje rosa" },
+    { src: "/img/gallery/gallery-5.jpg", alt: "Pasista con tocado rosa" },
+    { src: "/img/gallery/gallery-6.jpg", alt: "Pasista rosa en movimiento" },
+    { src: "/img/gallery/gallery-7.jpg", alt: "Pasista rosa en movimiento" },
+  ];
+
+  // Schedule images - NEW
+  const scheduleImages = [
+    {
+      src: "/img/cronograma-viernes.jpg",
+      alt: "Cronograma Viernes 13 de Febrero",
+      day: "Viernes 13",
+      date: "2026-02-13",
+    },
+    {
+      src: "/img/cronograma-sabado.jpg",
+      alt: "Cronograma Sábado 14 de Febrero",
+      day: "Sábado 14",
+      date: "2026-02-14",
+    },
+    {
+      src: "/img/cronograma-domingo.jpg",
+      alt: "Cronograma Domingo 15 de Febrero",
+      day: "Domingo 15",
+      date: "2026-02-15",
+    },
+  ];
+
+  useEffect(() => {
+    fetchConfig();
+  }, []);
+
+  // Auto-rotate gallery
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentGalleryIndex((prev) => (prev + 1) % galleryImages.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [galleryImages.length]);
+
+  const fetchConfig = async () => {
+    try {
+      const res = await fetch("/api/config", { cache: "no-store" });
+
+      let data: { success?: boolean; data?: SystemConfig } | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok || !data?.success) {
+        console.error("Config fetch failed:", {
+          status: res.status,
+          statusText: res.statusText,
+          data,
+        });
+        setConfig(null);
+        setLoading(false);
+        return;
+      }
+
+      setConfig(data.data ?? null);
+
+      // eventDates puede no existir; ok
+      let dates: EventDate[] = [];
+
+      try {
+        const eventDatesRaw = data?.data?.eventDates;
+
+        if (typeof eventDatesRaw === "string") {
+          dates = JSON.parse(eventDatesRaw);
+        } else if (Array.isArray(eventDatesRaw)) {
+          dates = eventDatesRaw;
+        }
+      } catch (error) {
+        console.error("Error parsing eventDates:", error);
+      }
+
+      setEventDates(dates);
+
+      setLoading(false);
+      fetchStats();
+    } catch (error) {
+      console.error("Error fetching config:", error);
+      setConfig(null);
+      setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const statsRes = await fetch("/api/stats", { cache: "no-store" });
+      const statsData = await statsRes.json();
+
+      if (statsRes.ok && statsData?.success) {
+        setSoldCount(statsData.data?.soldCount || 0);
+      }
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+      setSoldCount(0);
+    }
+  };
+
+  const handleBuyTickets = () => {
+    router.push(`/checkout?quantity=${quantity}`);
+  };
+
+  const nextGalleryImage = () => {
+    setCurrentGalleryIndex((prev) => (prev + 1) % galleryImages.length);
+  };
+
+  const prevGalleryImage = () => {
+    setCurrentGalleryIndex(
+      (prev) => (prev - 1 + galleryImages.length) % galleryImages.length,
+    );
+  };
+
+  const nextSchedule = () => {
+    setCurrentScheduleIndex((prev) => (prev + 1) % scheduleImages.length);
+  };
+
+  const prevSchedule = () => {
+    setCurrentScheduleIndex(
+      (prev) => (prev - 1 + scheduleImages.length) % scheduleImages.length,
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500">
+        <div className="text-center">
+          <div className="text-white text-4xl sm:text-6xl mb-4 animate-bounce">
+            🎭
+          </div>
+          <div className="text-white text-xl sm:text-2xl font-bold animate-pulse px-4">
+            Cargando...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!config) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 p-4">
+        <div className="bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-2xl text-center max-w-md w-full">
+          <div className="text-4xl mb-4">⚠️</div>
+          <div className="text-xl sm:text-2xl font-bold mb-2 text-gray-900">
+            Sin configuración
+          </div>
+          <div className="text-sm sm:text-base text-gray-600 mb-6">
+            Cargá la configuración desde el panel admin para habilitar ventas.
+          </div>
+          <button
+            onClick={() => router.push("/admin/login")}
+            className="w-full bg-gradient-to-r from-pink-500 to-orange-500 text-white font-bold py-3 rounded-xl hover:shadow-lg transition-all"
+          >
+            Ir a Administración
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const available = (config.totalAvailable || 0) - soldCount;
+  const totalPrice = (config.ticketPrice || 0) * quantity;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-500 to-orange-500 overflow-hidden">
+      {/* Animated background elements - Hidden on mobile */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none hidden sm:block">
+        <div className="absolute top-20 left-10 text-4xl sm:text-6xl animate-bounce opacity-20">
+          🎭
+        </div>
+        <div className="absolute top-40 right-20 text-4xl sm:text-6xl animate-pulse opacity-20">
+          🎉
+        </div>
+        <div
+          className="absolute bottom-20 left-1/4 text-4xl sm:text-6xl animate-bounce opacity-20"
+          style={{ animationDelay: "1s" }}
+        >
+          🎊
+        </div>
+        <div
+          className="absolute bottom-40 right-1/3 text-4xl sm:text-6xl animate-pulse opacity-20"
+          style={{ animationDelay: "0.5s" }}
+        >
+          ✨
+        </div>
+      </div>
+
+      {/* Navbar */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="text-2xl sm:text-4xl">🎭</div>
+              <div>
+                <div className="text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-orange-600 font-black text-sm sm:text-xl">
+                  Carnaval Makallé
+                </div>
+                <div className="text-[10px] sm:text-xs text-gray-600 font-semibold">
+                  Municipio de Makallé
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() =>
+                window.scrollTo({
+                  top: document.getElementById("comprar")?.offsetTop,
+                  behavior: "smooth",
+                })
+              }
+              className="bg-gradient-to-r from-yellow-400 to-orange-500 text-gray-900 px-4 sm:px-8 py-2 sm:py-3 rounded-full font-black text-sm sm:text-lg hover:shadow-2xl hover:scale-110 transition-all animate-pulse shadow-lg border-2 border-white"
+            >
+              <span className="hidden sm:inline">¡Comprar ahora! 🎟️</span>
+              <span className="sm:hidden">Comprar 🎟️</span>
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero Section with Image */}
+      <div className="pt-16 sm:pt-24 pb-6 sm:pb-8 px-4 sm:px-6 lg:px-8 relative">
+        <div className="max-w-7xl mx-auto">
+          {/* Main Banner Image */}
+          <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl mb-6 sm:mb-8 max-w-5xl mx-auto">
+            <Image
+              src="/img/portada.png"
+              alt="Carnaval Makallé"
+              width={1200}
+              height={600}
+              className="w-full h-auto"
+              priority
+              quality={85}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
+          </div>
+
+          {/* Photo Gallery Section */}
+          <div className="mb-8 sm:mb-12 max-w-5xl mx-auto">
+            <h3 className="text-2xl sm:text-3xl font-black text-white text-center mb-4 sm:mb-6 drop-shadow-lg flex items-center justify-center gap-3">
+              <span className="text-3xl sm:text-4xl">📸</span>
+              Reviví la Magia de Años Anteriores
+              <span className="text-3xl sm:text-4xl">✨</span>
+            </h3>
+
+            {/* Gallery Carousel */}
+            <div className="relative">
+              <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl aspect-[4/3] sm:aspect-[16/9]">
+                {galleryImages.map((img, idx) => (
+                  <div
+                    key={idx}
+                    className={`absolute inset-0 transition-opacity duration-700 ${
+                      idx === currentGalleryIndex ? "opacity-100" : "opacity-0"
+                    }`}
+                  >
+                    <Image
+                      src={img.src}
+                      alt={img.alt}
+                      fill
+                      className="object-cover"
+                      quality={90}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                  </div>
+                ))}
+
+                {/* Navigation Arrows */}
+                <button
+                  onClick={prevGalleryImage}
+                  className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+                  aria-label="Imagen anterior"
+                >
+                  <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-900" />
+                </button>
+                <button
+                  onClick={nextGalleryImage}
+                  className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+                  aria-label="Imagen siguiente"
+                >
+                  <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-gray-900" />
+                </button>
+
+                {/* Dots Indicator */}
+                <div className="absolute bottom-3 sm:bottom-4 left-0 right-0 flex items-center justify-center gap-2 z-10">
+                  {galleryImages.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentGalleryIndex(idx)}
+                      className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full transition-all ${
+                        idx === currentGalleryIndex
+                          ? "bg-white w-6 sm:w-8"
+                          : "bg-white/50 hover:bg-white/75"
+                      }`}
+                      aria-label={`Ir a imagen ${idx + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Gallery Caption */}
+              <div className="mt-3 sm:mt-4 text-center">
+                <p className="text-white text-sm sm:text-base drop-shadow-lg font-medium">
+                  ¡Vení a vivir esta increíble experiencia en vivo! 🎉
+                </p>
+              </div>
+            </div>
+
+            {/* Mini Gallery Grid - Desktop Only */}
+            <div className="hidden lg:grid grid-cols-4 gap-4 mt-6">
+              {galleryImages.slice(0, 4).map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setCurrentGalleryIndex(idx)}
+                  className={`relative rounded-xl overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all hover:scale-105 ${
+                    idx === currentGalleryIndex
+                      ? "ring-4 ring-white ring-offset-2 ring-offset-pink-500"
+                      : ""
+                  }`}
+                >
+                  <Image
+                    src={img.src}
+                    alt={img.alt}
+                    fill
+                    className="object-cover"
+                    quality={75}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Event Dates */}
+          {eventDates.length > 0 && (
+            <div className="mb-6 sm:mb-8 max-w-5xl mx-auto">
+              <h3 className="text-xl sm:text-2xl font-bold text-white text-center mb-4 drop-shadow-lg">
+                📅 Fechas del Evento
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                {eventDates.map((eventDate, idx) => {
+                  const date = new Date(eventDate.date);
+                  return (
+                    <div
+                      key={eventDate.id}
+                      className="bg-white/95 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-pink-500 to-red-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                          <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-gray-500 font-semibold uppercase">
+                            {eventDate.name}
+                          </div>
+                          <div className="font-bold text-gray-900 text-sm sm:text-base truncate">
+                            {date.toLocaleDateString("es-AR", {
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs sm:text-sm text-gray-600">
+                        {date.toLocaleDateString("es-AR", {
+                          weekday: "long",
+                        })}{" "}
+                        • 21:00 hs
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Program Schedule Section - UPDATED WITH CAROUSEL */}
+          <div className="mb-6 sm:mb-8 max-w-5xl mx-auto">
+            <h3 className="text-2xl sm:text-3xl font-black text-white text-center mb-4 sm:mb-6 drop-shadow-lg flex items-center justify-center gap-3">
+              <span className="text-3xl sm:text-4xl">🎭</span>
+              Programación de Comparsas
+              <span className="text-3xl sm:text-4xl">🎉</span>
+            </h3>
+
+            {/* Schedule Carousel */}
+            <div className="relative mb-6">
+              <div className="bg-white/95 backdrop-blur-sm rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl">
+                {/* Day selector tabs */}
+                <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+                  {scheduleImages.map((schedule, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentScheduleIndex(idx)}
+                      className={`flex-shrink-0 px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all ${
+                        idx === currentScheduleIndex
+                          ? "bg-gradient-to-r from-pink-500 to-orange-500 text-white shadow-lg"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {schedule.day}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Schedule Image Display */}
+                <div className="relative">
+                  <div className="relative rounded-xl overflow-hidden">
+                    {scheduleImages.map((schedule, idx) => (
+                      <div
+                        key={idx}
+                        className={`transition-opacity duration-500 ${
+                          idx === currentScheduleIndex
+                            ? "opacity-100"
+                            : "opacity-0 absolute inset-0"
+                        }`}
+                      >
+                        <Image
+                          src={schedule.src}
+                          alt={schedule.alt}
+                          width={1200}
+                          height={1400}
+                          className="w-full h-auto rounded-xl"
+                          quality={90}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Navigation Arrows for Schedule */}
+                  {scheduleImages.length > 1 && (
+                    <>
+                      <button
+                        onClick={prevSchedule}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+                        aria-label="Día anterior"
+                      >
+                        <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-900" />
+                      </button>
+                      <button
+                        onClick={nextSchedule}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+                        aria-label="Día siguiente"
+                      >
+                        <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-gray-900" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Info Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              <div className="bg-gradient-to-br from-pink-500 to-red-500 rounded-xl p-4 text-white shadow-lg">
+                <div className="text-2xl mb-2">🎭</div>
+                <div className="font-bold text-sm sm:text-base mb-1">
+                  Grilla Principal
+                </div>
+                <div className="text-xs sm:text-sm opacity-90">
+                  21:00 - 22:00 hs
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl p-4 text-white shadow-lg">
+                <div className="text-2xl mb-2">🎊</div>
+                <div className="font-bold text-sm sm:text-base mb-1">
+                  Comparsas Locales
+                </div>
+                <div className="text-xs sm:text-sm opacity-90">
+                  22:00 - 02:00 hs
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-orange-500 to-yellow-500 rounded-xl p-4 text-white shadow-lg">
+                <div className="text-2xl mb-2">🎉</div>
+                <div className="font-bold text-sm sm:text-base mb-1">
+                  Cierre Espectacular
+                </div>
+                <div className="text-xs sm:text-sm opacity-90">
+                  03:00 - 04:30 hs
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Event Info Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-8 sm:mb-12 max-w-5xl mx-auto">
+            <div className="bg-white/95 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-all hover:scale-105">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-gray-500 font-semibold uppercase">
+                    Lugar
+                  </div>
+                  <div className="font-bold text-gray-900 text-sm sm:text-base">
+                    Makallé
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs sm:text-sm text-gray-600 truncate">
+                {config.eventLocation}
+              </div>
+            </div>
+
+            <div className="bg-white/95 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-all hover:scale-105">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-gray-500 font-semibold uppercase">
+                    Horario
+                  </div>
+                  <div className="font-bold text-gray-900 text-sm sm:text-base">
+                    21:00 hs
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs sm:text-sm text-gray-600">
+                Apertura de puertas
+              </div>
+            </div>
+
+            <div className="bg-white/95 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-all hover:scale-105 sm:col-span-2 lg:col-span-1">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Ticket className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-gray-500 font-semibold uppercase">
+                    Disponibles
+                  </div>
+                  <div className="font-bold text-gray-900 text-sm sm:text-base">
+                    {available > 0 ? `${available} entradas` : "Agotadas"}
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs sm:text-sm text-gray-600">
+                {available > 0 ? "¡Comprá ahora!" : "Sin stock"}
+              </div>
+            </div>
+          </div>
+
+          {/* Availability Badge */}
+          <div className="text-center mb-6 sm:mb-8">
+            {available > 0 ? (
+              <div className="inline-flex items-center gap-2 bg-green-500 text-white px-4 sm:px-8 py-2 sm:py-3 rounded-full font-bold text-sm sm:text-lg shadow-lg animate-pulse">
+                <CheckCircle2 className="w-4 h-4 sm:w-6 sm:h-6" />
+                <span className="hidden sm:inline">
+                  ¡{available} entradas disponibles!
+                </span>
+                <span className="sm:hidden">{available} disponibles</span>
+              </div>
+            ) : soldCount > 0 ? (
+              <div className="inline-flex items-center gap-2 bg-red-500 text-white px-4 sm:px-8 py-2 sm:py-3 rounded-full font-bold text-sm sm:text-lg shadow-lg">
+                ⚠️ <span className="hidden sm:inline">Entradas agotadas</span>
+                <span className="sm:hidden">Agotadas</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 bg-blue-500 text-white px-4 sm:px-8 py-2 sm:py-3 rounded-full font-bold text-sm sm:text-lg shadow-lg animate-pulse">
+                <CheckCircle2 className="w-4 h-4 sm:w-6 sm:h-6" />
+                ¡Entradas disponibles!
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Ticket Purchase Section */}
+      <div id="comprar" className="pb-12 sm:pb-16 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Title */}
+          <div className="text-center mb-6 sm:mb-8">
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-white mb-2 sm:mb-3 drop-shadow-lg px-4">
+              ¡Conseguí tus entradas! 🎟️
+            </h2>
+            <p className="text-base sm:text-xl text-white/90 drop-shadow px-4">
+              No te quedes afuera de la fiesta más grande del año
+            </p>
+          </div>
+
+          {/* Main Ticket Card */}
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden transform hover:scale-[1.01] sm:hover:scale-[1.02] transition-all">
+            {/* Decorative Header */}
+            <div className="bg-gradient-to-r from-pink-600 via-red-500 to-orange-500 p-6 sm:p-8 text-center relative overflow-hidden">
+              <div className="absolute inset-0 opacity-10 hidden sm:block">
+                <div className="absolute top-0 left-0 text-9xl">🎭</div>
+                <div className="absolute bottom-0 right-0 text-9xl">🎉</div>
+              </div>
+              <div className="relative z-10">
+                <div className="text-white/90 text-xs sm:text-sm font-bold uppercase tracking-widest mb-2 sm:mb-3 flex items-center justify-center gap-2">
+                  <Sparkles className="w-3 h-3 sm:w-4 sm:h-4" />
+                  Entrada General
+                  <Sparkles className="w-3 h-3 sm:w-4 sm:h-4" />
+                </div>
+                <div className="text-white text-5xl sm:text-6xl md:text-7xl font-black mb-2 sm:mb-3 drop-shadow-lg">
+                  {formatCurrency(config.ticketPrice || 0)}
+                </div>
+                <div className="text-white/95 text-sm sm:text-base md:text-lg font-medium px-4">
+                  Por persona • Acceso completo al evento
+                </div>
+              </div>
+            </div>
+
+            {/* Ticket Content */}
+            <div className="p-4 sm:p-6 md:p-8">
+              {/* Features Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-6 sm:mb-8">
+                <div className="flex items-start gap-3 sm:gap-4 bg-gradient-to-br from-pink-50 to-orange-50 p-3 sm:p-4 rounded-xl">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-pink-500 to-orange-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
+                    <Ticket className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-gray-900 mb-1 text-sm sm:text-base">
+                      Entrada Digital
+                    </div>
+                    <div className="text-xs sm:text-sm text-gray-600">
+                      QR code al instante por email
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 sm:gap-4 bg-gradient-to-br from-green-50 to-emerald-50 p-3 sm:p-4 rounded-xl">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
+                    <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-gray-900 mb-1 text-sm sm:text-base">
+                      Pago Seguro
+                    </div>
+                    <div className="text-xs sm:text-sm text-gray-600">
+                      Procesado por Unicobros
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 sm:gap-4 bg-gradient-to-br from-blue-50 to-cyan-50 p-3 sm:p-4 rounded-xl">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
+                    <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-gray-900 mb-1 text-sm sm:text-base">
+                      Confirmación Inmediata
+                    </div>
+                    <div className="text-xs sm:text-sm text-gray-600">
+                      Recibí tu entrada al instante
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 sm:gap-4 bg-gradient-to-br from-purple-50 to-pink-50 p-3 sm:p-4 rounded-xl">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
+                    <Users className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-gray-900 mb-1 text-sm sm:text-base">
+                      Compra Grupal
+                    </div>
+                    <div className="text-xs sm:text-sm text-gray-600">
+                      Hasta {config.maxPerPurchase} entradas
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quantity Selector */}
+              <div className="mb-4 sm:mb-6">
+                <label className="block text-sm sm:text-base font-bold text-gray-700 mb-3 sm:mb-4 text-center">
+                  ¿Cuántas entradas necesitás?
+                </label>
+                <div className="flex items-center gap-3 sm:gap-4 max-w-md mx-auto">
+                  <button
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    disabled={quantity <= 1}
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-gradient-to-br from-pink-500 to-orange-500 text-white flex items-center justify-center font-bold text-xl sm:text-2xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+                  >
+                    −
+                  </button>
+
+                  <div className="flex-1 text-center bg-gradient-to-br from-pink-50 to-orange-50 rounded-xl py-3 sm:py-4">
+                    <div className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-orange-600">
+                      {quantity}
+                    </div>
+                    <div className="text-xs sm:text-sm text-gray-600 font-semibold mt-1">
+                      {quantity === 1 ? "entrada" : "entradas"}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      setQuantity(
+                        Math.min(config.maxPerPurchase || 10, quantity + 1),
+                      )
+                    }
+                    disabled={quantity >= (config.maxPerPurchase || 10)}
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-gradient-to-br from-pink-500 to-orange-500 text-white flex items-center justify-center font-bold text-xl sm:text-2xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="text-center text-xs text-gray-500 mt-2 sm:mt-3 font-medium">
+                  Máximo {config.maxPerPurchase} entradas por compra
+                </div>
+              </div>
+
+              {/* Total Price */}
+              <div className="bg-gradient-to-r from-pink-100 via-red-100 to-orange-100 rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-4 sm:mb-6 border-2 border-orange-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-gray-700 font-bold text-base sm:text-lg">
+                    Total a pagar:
+                  </div>
+                  <div className="text-3xl sm:text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-orange-600">
+                    {formatCurrency(totalPrice)}
+                  </div>
+                </div>
+                <div className="text-xs sm:text-sm text-gray-600 text-right font-medium">
+                  {quantity} {quantity === 1 ? "entrada" : "entradas"} ×{" "}
+                  {formatCurrency(config.ticketPrice || 0)}
+                </div>
+              </div>
+
+              {/* Buy Button */}
+              <button
+                onClick={handleBuyTickets}
+                disabled={!config.salesEnabled || available <= 0}
+                className="w-full bg-gradient-to-r from-pink-600 via-red-500 to-orange-500 hover:from-pink-700 hover:via-red-600 hover:to-orange-600 text-white font-black py-4 sm:py-5 px-6 sm:px-8 rounded-xl sm:rounded-2xl text-base sm:text-xl shadow-xl hover:shadow-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 sm:gap-3"
+              >
+                {!config.salesEnabled ? (
+                  "Ventas cerradas"
+                ) : available <= 0 && soldCount > 0 ? (
+                  "Entradas agotadas"
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+                    <span className="hidden sm:inline">
+                      ¡Comprar Entradas Ahora!
+                    </span>
+                    <span className="sm:hidden">¡Comprar Ahora!</span>
+                    <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </>
+                )}
+              </button>
+
+              <div className="text-center mt-3 sm:mt-4 text-xs sm:text-sm text-gray-600 flex items-center justify-center gap-2">
+                <Shield className="w-3 h-3 sm:w-4 sm:h-4 text-green-600" />
+                <span className="font-medium">
+                  Pago 100% seguro con Unicobros
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* How it works */}
+          <div className="mt-12 sm:mt-16 text-center">
+            <h3 className="text-2xl sm:text-3xl font-black text-white mb-6 sm:mb-8 drop-shadow-lg px-4">
+              ¿Cómo funciona? Es muy fácil! 🎯
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+              <div className="bg-white/95 backdrop-blur-sm rounded-xl sm:rounded-2xl p-6 sm:p-8 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
+                <div className="text-5xl sm:text-6xl mb-3 sm:mb-4">1️⃣</div>
+                <div className="font-bold text-lg sm:text-xl mb-2 sm:mb-3 text-gray-900">
+                  Elegí tu cantidad
+                </div>
+                <div className="text-sm sm:text-base text-gray-600">
+                  Seleccioná cuántas entradas necesitás para vos y tus amigos
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm rounded-xl sm:rounded-2xl p-6 sm:p-8 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
+                <div className="text-5xl sm:text-6xl mb-3 sm:mb-4">2️⃣</div>
+                <div className="font-bold text-lg sm:text-xl mb-2 sm:mb-3 text-gray-900">
+                  Pagá seguro
+                </div>
+                <div className="text-sm sm:text-base text-gray-600">
+                  Con Unicobros
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm rounded-xl sm:rounded-2xl p-6 sm:p-8 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
+                <div className="text-5xl sm:text-6xl mb-3 sm:mb-4">3️⃣</div>
+                <div className="font-bold text-lg sm:text-xl mb-2 sm:mb-3 text-gray-900">
+                  Recibí tu QR
+                </div>
+                <div className="text-sm sm:text-base text-gray-600">
+                  Al instante, listo para presentar en la entrada
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="bg-gradient-to-r from-pink-900 via-red-900 to-orange-900 py-6 sm:py-8">
+        <div className="max-w-7xl mx-auto px-4 text-center">
+          <p className="text-white/70 text-xs sm:text-sm px-4">
+            © 2026 Carnavales Makallé - Municipio de Makallé - Todos los
+            derechos reservados
+          </p>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+
+=== APP/CHECKOUT/PAGE.TSX ===
+// app/checkout/page.tsx
+"use client";
+
+import { useState, useEffect, Suspense, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
+import { formatCurrency, isValidEmail, isValidPhone } from "@/lib/utils";
+import { toast } from "sonner";
+
+function CheckoutContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const quantity = parseInt(searchParams.get("quantity") || "1");
+
+  const [loading, setLoading] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [ticketPrice, setTicketPrice] = useState(0);
+  const [formData, setFormData] = useState({
+    buyerName: "",
+    buyerEmail: "",
+    buyerPhone: "",
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // ✅ Protección anti-duplicados
+  const isProcessingRef = useRef(false);
+  const lastSubmitTimeRef = useRef(0);
+
+  const totalAmount = ticketPrice * quantity;
+
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  const loadConfig = async () => {
+    try {
+      const res = await fetch("/api/config", { cache: "no-store" });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+
+      console.log("🔍 Response config:", data);
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "No se pudo cargar la configuración");
+      }
+
+      const price = Number(data.data.ticketPrice || 0);
+      console.log("💰 Precio cargado:", price);
+      setTicketPrice(price);
+    } catch (error: unknown) {
+      console.error("❌ Error cargando config:", error);
+      toast.error("Error cargando precios");
+      setTicketPrice(0);
+    } finally {
+      setLoadingConfig(false);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.buyerName || formData.buyerName.trim().length < 3) {
+      newErrors.buyerName = "El nombre debe tener al menos 3 caracteres";
+    }
+
+    if (!isValidEmail(formData.buyerEmail)) {
+      newErrors.buyerEmail = "Email inválido";
+    }
+
+    if (!isValidPhone(formData.buyerPhone)) {
+      newErrors.buyerPhone = "Teléfono inválido (ej: +54 9 362 123-4567)";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // ✅ PROTECCIÓN 1: Evitar doble click
+    if (isProcessingRef.current) {
+      console.log("⏳ Ya estamos procesando una compra, espera...");
+      toast.warning("Ya estamos procesando tu compra, por favor espera");
+      return;
+    }
+
+    // ✅ PROTECCIÓN 2: Rate limiting (5 segundos entre intentos)
+    const now = Date.now();
+    const timeSinceLastSubmit = now - lastSubmitTimeRef.current;
+    if (timeSinceLastSubmit < 5000) {
+      const waitTime = Math.ceil((5000 - timeSinceLastSubmit) / 1000);
+      console.log(
+        `⏳ Espera ${waitTime} segundos antes de intentar nuevamente`,
+      );
+      toast.warning(`Espera ${waitTime} segundos antes de intentar nuevamente`);
+      return;
+    }
+
+    if (!validateForm()) {
+      toast.error("Por favor completá todos los campos correctamente");
+      return;
+    }
+
+    // Marcar como procesando
+    isProcessingRef.current = true;
+    lastSubmitTimeRef.current = now;
+    setLoading(true);
+
+    try {
+      // Normalizar teléfono
+      let phone = formData.buyerPhone.replace(/[^0-9+]/g, "");
+      if (!phone.startsWith("+")) {
+        phone = "+54" + phone;
+      }
+
+      console.log("📦 Creando orden con teléfono normalizado:", phone);
+
+      // 1) Crear la orden + tickets
+      const createRes = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          buyerPhone: phone,
+          quantity,
+        }),
+      });
+
+      const createText = await createRes.text();
+      console.log("📦 Response texto:", createText);
+
+      if (!createRes.ok) {
+        throw new Error(
+          `Error creando orden (${createRes.status}): ${createText}`,
+        );
+      }
+
+      const createData = createText ? JSON.parse(createText) : null;
+      console.log("📦 Orden creada:", createData);
+
+      if (!createData?.success) {
+        throw new Error(createData?.error || "Error al crear la orden");
+      }
+
+      const { id: orderId } = createData.data;
+      console.log("✅ Order ID:", orderId);
+
+      // 2) Crear preferencia de Unicobros
+      console.log("💳 Creando preferencia Unicobros...");
+      const mpRes = await fetch("/api/unicobros/preference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+
+      const mpText = await mpRes.text();
+      console.log("💳 Response texto:", mpText);
+
+      if (!mpRes.ok) {
+        const mpData = mpText ? JSON.parse(mpText) : null;
+
+        // ✅ Si está bloqueado, redirigir al inicio
+        if (mpData?.blocked || (mpData?.redirect && mpData.redirect === "/")) {
+          console.log("🚫 Bloqueado - Redirigiendo al inicio");
+          toast.error(
+            mpData.error || "Demasiados intentos. Intenta más tarde.",
+          );
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 2000);
+          return;
+        }
+
+        // Si es 429 (rate limit), mostrar mensaje específico
+        if (mpRes.status === 429) {
+          throw new Error(
+            mpData?.error ||
+              "Por favor espera unos segundos antes de intentar nuevamente",
+          );
+        }
+
+        throw new Error(`Error al crear el pago (${mpRes.status}): ${mpText}`);
+      }
+
+      const mpData = mpText ? JSON.parse(mpText) : null;
+      console.log("💳 Data parseado:", mpData);
+
+      if (!mpData?.success) {
+        // ✅ Manejar redirección si la orden ya está pagada
+        if (mpData?.redirect && mpData.redirect !== "/") {
+          console.log("✅ Orden ya pagada - Redirigiendo a success");
+          toast.success("Redirigiendo...");
+          setTimeout(() => {
+            window.location.href = mpData.redirect;
+          }, 1000);
+          return;
+        }
+
+        throw new Error(
+          mpData?.error || mpText || "Error al crear preferencia",
+        );
+      }
+
+      if (!mpData.initPoint) {
+        console.error("❌ Data completo:", JSON.stringify(mpData, null, 2));
+        throw new Error("No se recibió el link de pago de Unicobros");
+      }
+
+      console.log("✅ Redirigiendo a:", mpData.initPoint);
+
+      // 3) Mostrar mensaje de redirección
+      toast.success("Redirigiendo al pago...", { duration: 2000 });
+
+      // 4) Redirigir después de un breve delay
+      setTimeout(() => {
+        window.location.href = mpData.initPoint;
+      }, 500);
+    } catch (error: unknown) {
+      console.error("❌ Error completo:", error);
+
+      // Liberar el lock en caso de error
+      isProcessingRef.current = false;
+      setLoading(false);
+
+      if (error instanceof Error) {
+        toast.error(error.message || "Error al procesar la compra");
+      } else {
+        toast.error("Error al procesar la compra");
+      }
+    }
+    // NO liberamos isProcessingRef aquí porque ya estamos redirigiendo
+  };
+
+  if (loadingConfig) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
+          <p className="text-gray-600">Cargando información...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <button
+            onClick={() => router.back()}
+            disabled={loading}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            Volver
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Form Column */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl shadow-sm p-6 md:p-8">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                Completá tus datos
+              </h1>
+              <p className="text-gray-600 mb-8">
+                Necesitamos esta información para enviarte las entradas
+              </p>
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Nombre */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Nombre completo *
+                  </label>
+                  <input
+                    type="text"
+                    name="buyerName"
+                    value={formData.buyerName}
+                    onChange={handleChange}
+                    disabled={loading}
+                    placeholder="Juan Pérez"
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed ${
+                      errors.buyerName ? "border-red-500" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.buyerName && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.buyerName}
+                    </p>
+                  )}
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    name="buyerEmail"
+                    value={formData.buyerEmail}
+                    onChange={handleChange}
+                    disabled={loading}
+                    placeholder="juan@ejemplo.com"
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed ${
+                      errors.buyerEmail ? "border-red-500" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.buyerEmail && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.buyerEmail}
+                    </p>
+                  )}
+                  <p className="mt-1 text-sm text-gray-500">
+                    Recibirás las entradas en este email
+                  </p>
+                </div>
+
+                {/* Teléfono */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Teléfono *
+                  </label>
+                  <input
+                    type="tel"
+                    name="buyerPhone"
+                    value={formData.buyerPhone}
+                    onChange={handleChange}
+                    disabled={loading}
+                    placeholder="+54 9 362 123-4567"
+                    className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed ${
+                      errors.buyerPhone ? "border-red-500" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.buyerPhone && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.buyerPhone}
+                    </p>
+                  )}
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Procesando...
+                    </>
+                  ) : (
+                    <>
+                      Continuar al pago
+                      <ShieldCheck className="w-5 h-5" />
+                    </>
+                  )}
+                </button>
+
+                {/* Aviso */}
+                <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-900">
+                        Aviso importante
+                      </p>
+                      <p className="text-sm text-amber-800 mt-1">
+                        El ticket QR{" "}
+                        <strong>solo puede ser utilizado una vez</strong>. Luego
+                        será invalidado automáticamente.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-sm text-gray-500 text-center">
+                  Al continuar, serás redirigido a Unicobros para completar el
+                  pago de forma segura
+                </p>
+              </form>
+            </div>
+          </div>
+
+          {/* Summary Column */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-sm p-6 sticky top-24">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Resumen</h2>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between py-3 border-b">
+                  <span className="text-gray-600">Cantidad</span>
+                  <span className="font-semibold text-gray-900">
+                    {quantity} entrada{quantity !== 1 ? "s" : ""}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-3 border-b">
+                  <span className="text-gray-600">Precio unitario</span>
+                  <span className="font-semibold text-gray-900">
+                    {formatCurrency(ticketPrice)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg px-4">
+                  <span className="font-bold text-gray-900">Total</span>
+                  <span className="text-2xl font-bold text-purple-600">
+                    {formatCurrency(totalAmount)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5" />
+                  Pago 100% seguro
+                </h3>
+                <p className="text-sm text-blue-800">
+                  Tu pago es procesado de forma segura por Unicobros. Aceptamos
+                  todas las tarjetas de crédito y débito.
+                </p>
+              </div>
+
+              <div className="mt-4 p-4 bg-green-50 rounded-lg">
+                <h3 className="font-semibold text-green-900 mb-2">
+                  📧 Entrega instantánea
+                </h3>
+                <p className="text-sm text-green-800">
+                  Recibirás tus entradas con código QR al instante por email
+                  después de confirmar el pago.
+                </p>
+              </div>
+
+              <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-lg">
+                <h3 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  Aviso importante
+                </h3>
+                <p className="text-sm text-amber-800 font-medium">
+                  El ticket QR solo puede ser utilizado una vez. Luego será
+                  invalidado automáticamente.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+        </div>
+      }
+    >
+      <CheckoutContent />
+    </Suspense>
+  );
+}
+
+
+=== APP/CHECKOUT/SUCCESS/PAGE.TSX ===
+// app/checkout/success/page.tsx
+"use client";
+
+import { useEffect, useState, useRef, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import {
+  CheckCircle2,
+  Download,
+  Mail,
+  Home,
+  Loader2,
+  Clock,
+  FileText,
+  AlertTriangle,
+  RefreshCw,
+} from "lucide-react";
+
+interface Order {
+  orderNumber: string;
+  quantity: number;
+  buyerName: string;
+  buyerEmail: string;
+  buyerPhone?: string;
+  totalAmount: number;
+  paymentStatus: string;
+  downloadToken?: string;
+}
+
+// Helpers WhatsApp
+function normalizePhoneForWhatsApp(phone: string): string {
+  let digits = (phone || "").replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (!digits.startsWith("54")) digits = "54" + digits;
+  digits = digits.replace(/^540/, "54");
+  digits = digits.replace(/^54(\d{2,4})15/, "54$1");
+  return digits;
+}
+
+function buildWaMeLink(phoneDigits: string, message: string): string {
+  return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}`;
+}
+
+function SuccessContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const orderId = searchParams.get("orderId");
+  const transactionId =
+    searchParams.get("transactionId") ||
+    searchParams.get("transaction_id") ||
+    searchParams.get("id");
+
+  const [order, setOrder] = useState<Order | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [paymentStatus, setPaymentStatus] = useState<string>("PENDING");
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [confirmAttempts, setConfirmAttempts] = useState(0);
+  const [statusMessage, setStatusMessage] = useState<string>(
+    "Verificando tu pago...",
+  );
+
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const maxAttempts = 40; // 40 intentos × 3s = 2 minutos
+
+  useEffect(() => {
+    if (!orderId) return;
+
+    // Llamada inicial inmediata
+    verifyPayment();
+
+    // Polling cada 3 segundos
+    intervalRef.current = setInterval(verifyPayment, 3000);
+
+    // Timeout de seguridad: parar después de 2 minutos
+    const timeout = setTimeout(() => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    }, 120000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      clearTimeout(timeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
+
+  const verifyPayment = async () => {
+    try {
+      setConfirmAttempts((prev) => prev + 1);
+
+      // 1. Llamar al endpoint de confirmación (intenta verificar con Unicobros)
+      const confirmParams = new URLSearchParams({ orderId: orderId! });
+
+      const status = searchParams.get("status") || searchParams.get("code");
+      if (status) confirmParams.set("status", status);
+
+      if (transactionId) {
+        confirmParams.set("transactionId", transactionId);
+      }
+
+      const confirmRes = await fetch(`/api/unicobros/confirm?${confirmParams}`);
+      const confirmData = await confirmRes.json();
+
+      if (confirmData.success && confirmData.status === "COMPLETED") {
+        // ¡Pago confirmado!
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setPaymentStatus("COMPLETED");
+        setLoading(false);
+
+        if (confirmData.downloadToken) {
+          setDownloadUrl(`/api/tickets/download/${confirmData.downloadToken}`);
+        }
+
+        // Cargar datos completos de la orden para mostrar
+        await fetchOrderDetails();
+        return;
+      }
+
+      if (confirmData.status === "FAILED") {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setPaymentStatus("FAILED");
+        setStatusMessage("El pago fue rechazado");
+        setLoading(false);
+        return;
+      }
+
+      // 2. Si confirm no resolvió, también consultar el estado de la orden directamente
+      const orderRes = await fetch(`/api/orders/${orderId}`);
+      const orderData = await orderRes.json();
+
+      if (orderData.success) {
+        setOrder(orderData.data);
+
+        if (orderData.data.paymentStatus === "COMPLETED") {
+          // Confirmado por webhook mientras tanto
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          setPaymentStatus("COMPLETED");
+          setLoading(false);
+
+          if (orderData.data.downloadToken) {
+            setDownloadUrl(
+              `/api/tickets/download/${orderData.data.downloadToken}`,
+            );
+          }
+          return;
+        }
+      }
+
+      // Actualizar mensaje según intentos
+      if (confirmAttempts > 10) {
+        setStatusMessage("Seguimos verificando tu pago con Unicobros...");
+      }
+      if (confirmAttempts > 20) {
+        setStatusMessage(
+          "Esto está tardando más de lo normal. No cierres esta página.",
+        );
+      }
+
+      // Si llegamos al máximo de intentos, parar el polling
+      if (confirmAttempts >= maxAttempts) {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Error verificando pago:", error);
+    } finally {
+      if (loading && confirmAttempts >= 3) {
+        // Dejar de mostrar spinner después de unos intentos
+        // pero seguir verificando en background
+        setLoading(false);
+      }
+    }
+  };
+
+  const fetchOrderDetails = async () => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}`);
+      const data = await res.json();
+      if (data.success) {
+        setOrder(data.data);
+        if (
+          data.data.downloadToken &&
+          data.data.paymentStatus === "COMPLETED"
+        ) {
+          setDownloadUrl(`/api/tickets/download/${data.data.downloadToken}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching order:", error);
+    }
+  };
+
+  // ─── Retry manual ───
+  const handleManualRetry = async () => {
+    setLoading(true);
+    setConfirmAttempts(0);
+    setStatusMessage("Verificando tu pago...");
+
+    // Reiniciar polling
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    await verifyPayment();
+    intervalRef.current = setInterval(verifyPayment, 3000);
+
+    setTimeout(() => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    }, 60000);
+  };
+
+  // ─── LOADING STATE ───
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
+        <div className="text-center max-w-md">
+          <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4" />
+          <p className="text-gray-600 text-lg">{statusMessage}</p>
+          <p className="text-gray-500 text-sm mt-2">
+            Esto puede tomar unos segundos
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── FAILED STATE ───
+  if (paymentStatus === "FAILED") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-2xl p-8 md:p-12 text-center">
+          <div className="flex justify-center mb-6">
+            <div className="bg-red-100 rounded-full p-6">
+              <AlertTriangle className="w-20 h-20 text-red-600" />
+            </div>
+          </div>
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            Pago Rechazado
+          </h1>
+          <p className="text-lg text-gray-600 mb-8">
+            Tu pago no pudo ser procesado. Podés intentar nuevamente.
+          </p>
+          <button
+            onClick={() => router.push("/")}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 mx-auto"
+          >
+            <Home className="w-5 h-5" />
+            Volver al inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── PENDING STATE (timeout) ───
+  if (paymentStatus === "PENDING") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-orange-50 flex items-center justify-center p-4">
+        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-2xl p-8 md:p-12 text-center">
+          <div className="flex justify-center mb-6">
+            <div className="bg-yellow-100 rounded-full p-6">
+              <Clock className="w-20 h-20 text-yellow-600" />
+            </div>
+          </div>
+
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            Pago en Proceso
+          </h1>
+
+          <p className="text-lg text-gray-600 mb-4">
+            Tu pago está siendo procesado. Puede demorar unos minutos en
+            confirmarse.
+          </p>
+          <p className="text-md text-gray-500 mb-8">
+            Te notificaremos por email a <strong>{order?.buyerEmail}</strong>{" "}
+            cuando se confirme.
+          </p>
+
+          {order && (
+            <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 mb-8">
+              <p className="text-sm text-yellow-800">
+                Número de Orden:{" "}
+                <span className="font-bold">{order.orderNumber}</span>
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <button
+              onClick={handleManualRetry}
+              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-5 h-5" />
+              Verificar nuevamente
+            </button>
+            <button
+              onClick={() => router.push("/")}
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+            >
+              <Home className="w-5 h-5" />
+              Volver al inicio
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-500 mt-6">
+            Si ya pagaste y no se confirma, contactanos a
+            fabriciobarreto2610@gmail.com o al 3734-469110
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── COMPLETED STATE ───
+  const waPhoneDigits = order?.buyerPhone
+    ? normalizePhoneForWhatsApp(order.buyerPhone)
+    : null;
+
+  const waMessage = order
+    ? `Hola ${order.buyerName}! 👋\nTu compra fue exitosa ✅\nOrden: ${order.orderNumber}\nEntradas: ${order.quantity}\n\nTe envié las entradas en PDF al email: ${order.buyerEmail}\nSi no te llegó, avisame por acá y te lo reenvío.`
+    : "Hola! Necesito ayuda con mi compra de entradas.";
+
+  const waLink = waPhoneDigits ? buildWaMeLink(waPhoneDigits, waMessage) : null;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center p-4">
+      <div className="max-w-2xl w-full">
+        <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-12 text-center">
+          {/* Success Icon */}
+          <div className="flex justify-center mb-6">
+            <div className="bg-green-100 rounded-full p-6 animate-bounce">
+              <CheckCircle2 className="w-20 h-20 text-green-600" />
+            </div>
+          </div>
+
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            ¡Compra Exitosa!
+          </h1>
+
+          <p className="text-lg text-gray-600 mb-8">
+            Tu pago ha sido procesado correctamente
+          </p>
+
+          {/* Order Details */}
+          {order && (
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-6 mb-8 text-left">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Número de Orden</p>
+                  <p className="font-bold text-gray-900">{order.orderNumber}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Cantidad</p>
+                  <p className="font-bold text-gray-900">
+                    {order.quantity} entrada(s)
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Comprador</p>
+                  <p className="font-bold text-gray-900">{order.buyerName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Total Pagado</p>
+                  <p className="font-bold text-green-600">
+                    ${Number(order.totalAmount).toLocaleString("es-AR")}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Botón de descarga del PDF */}
+          {downloadUrl && (
+            <div className="mb-6">
+              <a
+                href={downloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3"
+              >
+                <FileText className="w-6 h-6" />
+                Descargar Entradas (PDF)
+                <Download className="w-6 h-6" />
+              </a>
+              <p className="text-xs text-gray-500 mt-2">
+                Descargá tus entradas ahora o guardá este link para después
+              </p>
+            </div>
+          )}
+
+          {/* Email Info */}
+          <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 mb-8">
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <Mail className="w-6 h-6 text-blue-600" />
+              <h3 className="font-bold text-blue-900">Revisa tu email</h3>
+            </div>
+            <p className="text-sm text-blue-800">
+              También te enviamos tus entradas con código QR a{" "}
+              <span className="font-semibold">{order?.buyerEmail}</span>
+            </p>
+            <p className="text-xs text-blue-600 mt-2">
+              Si no lo ves, revisa la carpeta de spam
+            </p>
+          </div>
+
+          {/* Actions */}
+          <div className="space-y-3">
+            <button
+              onClick={() => router.push("/")}
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+            >
+              <Home className="w-5 h-5" />
+              Volver al inicio
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-500 mt-6">
+            ¿Problemas? Contactanos a fabriciobarreto2610@gmail.com o al
+            teléfono 3734-469110
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function CheckoutSuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="w-12 h-12 animate-spin text-purple-600" />
+        </div>
+      }
+    >
+      <SuccessContent />
+    </Suspense>
+  );
+}
+
+
+=== README.MD ===
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+
+## Getting Started
+
+First, run the development server:
+
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
